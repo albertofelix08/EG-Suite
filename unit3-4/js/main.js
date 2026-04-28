@@ -301,6 +301,7 @@ function applyCut() {
     state.isCutApplied = true;
     redrawActiveTab();
     setStatus(`Cut applied — θ=${state.cutAngle}°, z₀=${state.cutPos} | ${state.sectionPts.length} section vertices`);
+    console.log('section points:', state.sectionPts.length);
 }
 
 function restoreSolid() {

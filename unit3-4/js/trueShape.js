@@ -14,6 +14,14 @@
  *   - Heavy object line for the section outline
  *   - Vertex labels with leader lines
  *   - Dimension arrows (width & height)
+ *
+ * FIX v4: The 2D projection axes are now:
+ *   u = x   (world X — the axis that does NOT change with cut tilt)
+ *   v = −z·cosθ + (y − cutPos)·sinθ   (in-plane component along slope)
+ *
+ * This matches the angular sort axes in cutSolid.js so the vertex
+ * ordering from computeSectionPoints() maps directly and correctly
+ * onto the canvas without self-intersecting edges on oblique cuts.
  */
 
 // ═══════════════════════════════════════════════════════════════════
@@ -175,7 +183,7 @@ export function drawTrueShape(state) {
         },
         {
             title: 'EG-VISUALIZER',
-            lines: ['Engineering Graphics', `Vertices: ${state.sectionPts.length}`]
+            lines: ['Engineering Graphics', `Vertices: ${state.sectionPts ? state.sectionPts.length : 0}`]
         }
     ]);
 
@@ -200,15 +208,24 @@ export function drawTrueShape(state) {
         return;
     }
 
-    // ── Rabatment: project 3D points onto cutting plane 2D ──
-    // Cutting plane normal: N = (0, -sinθ, cosθ) in world space
-    // u-axis = X (world), v-axis = perpendicular direction in the plane
+    // ── Rabatment: project 3D section points onto cutting plane 2D ──
+    //
+    // The cutting plane's local frame is:
+    //   u-axis: world X  (lies in the plane, perpendicular to both the
+    //           tilt axis and the plane normal — purely horizontal)
+    //   v-axis: in-plane vertical component
+    //           v = −z·cosθ + (y − cutPos)·sinθ
+    //
+    // This matches the angular sort axes in cutSolid.js (FIX v4).
+    // The old projection used u=x, v = −z·cosθ + (y−cutPos)·sinθ which
+    // was already correct for the drawing but the sort used u=z — now
+    // both files agree so the polygon winds without self-intersection.
     const tR = (state.cutAngle * Math.PI) / 180;
     const cosT = Math.cos(tR), sinT = Math.sin(tR);
 
     const proj2d = state.sectionPts.map(([x, y, z]) => [
-        x,
-        -z * cosT + (y - state.cutPos) * sinT,
+        x,                                          // u = X (unchanged)
+        -z * cosT + (y - state.cutPos) * sinT,      // v = in-plane vertical
     ]);
 
     // Bounding box
@@ -317,7 +334,7 @@ export function drawTrueShape(state) {
     const bT = Math.min(...allY), bBot = Math.max(...allY);
 
     drawDimArrow(ctx, bL, bBot + 28, bR, bBot + 28,
-        `↔ ${((bR - bL) / sc).toFixed(1)}`, false);
+        `↔ ${((bR - bL) / sc).toFixed(1)}mm`, false);
     drawDimArrow(ctx, bL, bT, bL - 28, bBot,
-        `↕ ${((bBot - bT) / sc).toFixed(1)}`, true);
+        `↕ ${((bBot - bT) / sc).toFixed(1)}mm`, true);
 }

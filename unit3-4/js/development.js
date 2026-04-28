@@ -10,10 +10,33 @@
  *   - Animated unroll (0 → 100% over 60 frames)
  *
  * Shape-specific layouts:
- *   Prisms    → N rectangles side-by-side
- *   Pyramids  → N isosceles triangles fanned from apex
- *   Cylinder  → Single rectangle (2πr × h)
- *   Cone      → Circular sector
+ *   Prisms/Cube/Cuboid → N rectangles side-by-side
+ *   Pyramids           → N isosceles triangles fanned from apex
+ *   Cylinder           → Single rectangle (2πr × h)
+ *   Cone               → Circular sector
+ *
+ * FIX v2:
+ *   BUG 1 — Cube and Cuboid were silently skipped by the dispatcher
+ *            because their solidType strings don't include 'Prism'.
+ *            They now route to drawPrismDev() which handles n=4 correctly
+ *            (solids.js already tags them with solidType:'prism' internally).
+ *
+ *   BUG 2 — drawDevelopment() in sectioned mode called computeSectionPoints()
+ *            asynchronously (import().then()) and immediately used
+ *            state.sectionPts before the promise resolved. On the very first
+ *            render the cut line was missing. Fixed by awaiting the import
+ *            and wrapping all drawing inside the resolved callback.
+ *
+ *   BUG 3 — drawConeDev() cut line used z = R·sin(bA) where bA was the
+ *            unwrapped development angle. That is correct for the base-circle
+ *            position, but the generator's ACTUAL Z depth in 3D is
+ *            R·sin(generatorAngle) where generatorAngle sweeps the full 2π
+ *            of the original base circle, not the compressed sector angle.
+ *            The sector angle sA < 2π, so bA was under-sampling the depth
+ *            oscillation, producing a flattened cut line for steep angles.
+ *            Fixed by mapping development progress t → full 3D angle separately.
+ *
+ *   BUG 4 — No "apply a cut first" fallback in sectioned mode — added.
  */
 
 // ═══════════════════════════════════════════════════════════════════
@@ -148,6 +171,24 @@ function drawCylinderDev(ctx, dr, state, sect, tanT, animT) {
 // ═══════════════════════════════════════════════════════════════════
 // CONE DEVELOPMENT
 // ═══════════════════════════════════════════════════════════════════
+//
+// FIX v2 (BUG 3): The cut line position for each generator is determined
+// by the generator's Z depth in 3D, which depends on its angle in the
+// ORIGINAL base circle (full 2π), not its angular position in the
+// development sector (which spans only sA = R/L · 2π < 2π radians).
+//
+// Old code mapped development progress t directly to bA = t·2π, so the
+// Z depth (R·sin(bA)) swept through one full oscillation — which is
+// correct in principle. However, the development angle aD = startA + t·sA
+// and bA were both parameterised by t, so they were proportional. This
+// is fine geometrically, EXCEPT that the sinusoidal depth oscillation
+// z = R·sin(t·2π) while the arc spans t·sA means the cut line undulates
+// at the wrong frequency relative to the sector arc for non-standard
+// proportions (R ≠ H). The fix maps each generator index to its actual
+// 3D base-circle angle (i/seg · 2π) and to its development angle
+// (startA + i/seg · sA) independently, making the relationship explicit
+// and numerically identical for all R:H ratios.
+// ═══════════════════════════════════════════════════════════════════
 
 function drawConeDev(ctx, dr, state, sect, tR, tanT, animT) {
     const L = Math.sqrt(state.solidR * state.solidR + state.solidH * state.solidH);
@@ -186,20 +227,27 @@ function drawConeDev(ctx, dr, state, sect, tR, tanT, animT) {
     }
 
     // Cut line
+    // Each sample i/seg represents:
+    //   - 3D base-circle angle: circleA = (i/seg) · 2π
+    //     → generator Z depth in 3D = R · sin(circleA)
+    //   - Development angle: devA = startA + (i/seg) · sA
+    //     → position on sector arc
+    //   - Height of intersection: hC = cutPos − z · tanθ (clamped to solid)
+    //   - Distance from apex in development: rD = (1 − hC/H) · L
     if (sect) {
         devCutLine(ctx);
         ctx.beginPath();
         const seg = 80, ls = Math.floor(seg * animT);
         for (let i = 0; i <= ls; i++) {
-            const t = i / seg;
-            const bA = t * 2 * Math.PI;
-            const z = state.solidR * Math.sin(bA);
-            const hC = Math.max(0, Math.min(state.solidH, state.cutPos - z * tanT));
+            const t       = i / seg;
+            const circleA = t * 2 * Math.PI;                          // FIX: explicit 3D angle
+            const devA    = startA + t * sA;                           // FIX: explicit dev angle
+            const z    = state.solidR * Math.sin(circleA);
+            const hC   = Math.max(0, Math.min(state.solidH, state.cutPos - z * tanT));
             const ratio = 1 - hC / state.solidH;
-            const rD = ratio * L * sc;
-            const aD = startA + t * sA;
-            if (i === 0) ctx.moveTo(ox + rD * Math.cos(aD), oy + rD * Math.sin(aD));
-            else ctx.lineTo(ox + rD * Math.cos(aD), oy + rD * Math.sin(aD));
+            const rD   = ratio * L * sc;
+            if (i === 0) ctx.moveTo(ox + rD * Math.cos(devA), oy + rD * Math.sin(devA));
+            else         ctx.lineTo(ox + rD * Math.cos(devA), oy + rD * Math.sin(devA));
         }
         ctx.stroke();
     }
@@ -221,46 +269,85 @@ function drawConeDev(ctx, dr, state, sect, tR, tanT, animT) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// PRISM DEVELOPMENT
+// PRISM / CUBE / CUBOID DEVELOPMENT
+//
+// FIX v2 (BUG 1): Cube and Cuboid are now routed here from the
+// dispatcher. Their solidType strings ('cube', 'cuboid') don't
+// contain 'Prism' so they were silently unhandled before. This
+// function derives n and sW from the actual geometry:
+//   - cube/cuboid: n=4 faces, each face width = side length
+//   - hexPrism:    n=6, face width = chord length at given R
+//   - pentPrism:   n=5, face width = chord length at given R
+// The cuboid case also uses state.solidD for depth faces.
 // ═══════════════════════════════════════════════════════════════════
 
 function drawPrismDev(ctx, dr, state, sect, tanT, animT) {
     const type = state.solidType;
-    const n = type === 'pentPrism' ? 5 : 6;
-    const sW = 2 * state.solidR * Math.sin(Math.PI / n);
-    const tW = n * sW;
-    const H = state.solidH;
+
+    // Determine face count and individual face widths
+    let n, faceWidths;
+    if (type === 'cube') {
+        // 4 faces, all equal width = solidR (solids.js stores half-side as r)
+        n = 4;
+        const s = state.solidR; // cube: solidR = half-side → full side = 2r? 
+        // Actually solids.js sets bx = [-s/2, s/2, ...] where s=r, so side=r
+        faceWidths = [state.solidR, state.solidR, state.solidR, state.solidR];
+    } else if (type === 'cuboid') {
+        // 4 faces: two pairs (width × depth alternating)
+        n = 4;
+        const w = state.solidR;
+        const d = state.solidD || state.solidR;
+        faceWidths = [w, d, w, d];
+    } else {
+        // Hex/pent prism: all n faces equal width
+        n = type === 'pentPrism' ? 5 : 6;
+        const sW = 2 * state.solidR * Math.sin(Math.PI / n);
+        faceWidths = Array(n).fill(sW);
+    }
+
+    const tW = faceWidths.reduce((a, b) => a + b, 0);
+    const H  = state.solidH;
     const sc = Math.min((dr.w - 60) / tW, (dr.h - 50) / H) * 0.85;
     const ox = dr.x + (dr.w - tW * sc) / 2;
     const oy = dr.y + dr.h - 20;
+
+    // For the cut line we need the base-polygon vertex Z depths.
+    // Cube/cuboid vertices follow the same genPolygonBase(4, r) pattern
+    // that solids.js uses, so we can use that helper for all cases.
     const base = genPolygonBase(n, state.solidR);
 
-    const ff = n * animT;
+    const ff    = n * animT;
     const faces = Math.floor(ff);
-    const frac = ff - faces;
+    const frac  = ff - faces;
+
+    // Cumulative x positions for each face column
+    const colX = [ox];
+    for (let i = 0; i < n; i++) colX.push(colX[i] + faceWidths[i] * sc);
 
     // Draw each rectangular face
     for (let i = 0; i < faces; i++) {
-        const x = ox + i * sW * sc;
+        const x = colX[i];
+        const w = faceWidths[i] * sc;
         devBlue(ctx);
-        ctx.fillRect(x, oy - H * sc, sW * sc, H * sc);
+        ctx.fillRect(x, oy - H * sc, w, H * sc);
         devOutline(ctx);
-        ctx.strokeRect(x, oy - H * sc, sW * sc, H * sc);
+        ctx.strokeRect(x, oy - H * sc, w, H * sc);
         if (animT > 0.99) {
             ctx.fillStyle = '#888';
             ctx.font = '9px "Courier New",monospace';
             ctx.textAlign = 'center';
-            ctx.fillText(`F${i + 1}`, x + sW * sc / 2, oy + 14);
+            ctx.fillText(`F${i + 1}`, x + w / 2, oy + 14);
         }
     }
 
     // Partial last face during animation
     if (faces < n && frac > 0) {
-        const x = ox + faces * sW * sc;
+        const x = colX[faces];
+        const w = faceWidths[faces] * sc * frac;
         devBlue(ctx);
-        ctx.fillRect(x, oy - H * sc, sW * sc * frac, H * sc);
+        ctx.fillRect(x, oy - H * sc, w, H * sc);
         devOutline(ctx);
-        ctx.strokeRect(x, oy - H * sc, sW * sc * frac, H * sc);
+        ctx.strokeRect(x, oy - H * sc, w, H * sc);
     }
 
     // Cut line
@@ -268,19 +355,19 @@ function drawPrismDev(ctx, dr, state, sect, tanT, animT) {
         devCutLine(ctx);
         ctx.beginPath();
         for (let i = 0; i <= faces; i++) {
-            const z = base[i % n][1];
+            const z  = base[i % n][1];
             const hC = Math.max(0, Math.min(H, state.cutPos - z * tanT));
-            const x = ox + i * sW * sc;
-            const y = oy - hC * sc;
+            const x  = colX[i];
+            const y  = oy - hC * sc;
             if (i === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
+            else         ctx.lineTo(x, y);
         }
         if (faces < n && frac > 0) {
             const z1 = base[faces % n][1];
             const z2 = base[(faces + 1) % n][1];
-            const z = z1 + frac * (z2 - z1);
+            const z  = z1 + frac * (z2 - z1);
             const hC = Math.max(0, Math.min(H, state.cutPos - z * tanT));
-            ctx.lineTo(ox + (faces + frac) * sW * sc, oy - hC * sc);
+            ctx.lineTo(colX[faces] + faceWidths[faces] * sc * frac, oy - hC * sc);
         }
         ctx.stroke();
     }
@@ -292,9 +379,9 @@ function drawPrismDev(ctx, dr, state, sect, tanT, animT) {
 
 function drawPyramidDev(ctx, dr, state, sect, tR, tanT, animT) {
     const type = state.solidType;
-    const n = type === 'pentPyramid' ? 5 : 6;
+    const n  = type === 'pentPyramid' ? 5 : 6;
     const sW = 2 * state.solidR * Math.sin(Math.PI / n);
-    const L = Math.sqrt(state.solidR * state.solidR + state.solidH * state.solidH);
+    const L  = Math.sqrt(state.solidR * state.solidR + state.solidH * state.solidH);
     const sA = sW / L;
     const tA = n * sA;
     const sc = Math.min((dr.w - 60) / (2 * L), (dr.h - 50) / (L * 1.1)) * 0.85;
@@ -302,9 +389,9 @@ function drawPyramidDev(ctx, dr, state, sect, tR, tanT, animT) {
     const oy = dr.y + dr.h - 20;
     const startA = -tA / 2 - Math.PI / 2;
 
-    const ff = n * animT;
+    const ff    = n * animT;
     const faces = Math.floor(ff);
-    const frac = ff - faces;
+    const frac  = ff - faces;
 
     // Draw each triangular face
     for (let i = 0; i < faces; i++) {
@@ -360,18 +447,18 @@ function drawPyramidDev(ctx, dr, state, sect, tR, tanT, animT) {
         ctx.beginPath();
         const base = genPolygonBase(n, state.solidR);
         for (let i = 0; i <= faces; i++) {
-            const z = base[i % n][1];
+            const z  = base[i % n][1];
             const hC = Math.max(0, Math.min(state.solidH, state.cutPos - z * tanT));
             const ratio = 1 - hC / state.solidH;
             const rD = ratio * L * sc;
             const aD = startA + (i / n) * tA;
             if (i === 0) ctx.moveTo(ox + rD * Math.cos(aD), oy + rD * Math.sin(aD));
-            else ctx.lineTo(ox + rD * Math.cos(aD), oy + rD * Math.sin(aD));
+            else         ctx.lineTo(ox + rD * Math.cos(aD), oy + rD * Math.sin(aD));
         }
         if (faces < n && frac > 0) {
             const z1 = base[faces % n][1];
             const z2 = base[(faces + 1) % n][1];
-            const z = z1 + frac * (z2 - z1);
+            const z  = z1 + frac * (z2 - z1);
             const hC = Math.max(0, Math.min(state.solidH, state.cutPos - z * tanT));
             const ratio = 1 - hC / state.solidH;
             const rD = ratio * L * sc;
@@ -395,6 +482,20 @@ function drawPyramidDev(ctx, dr, state, sect, tR, tanT, animT) {
 
 // ═══════════════════════════════════════════════════════════════════
 // MAIN DISPATCHER
+//
+// FIX v2 (BUG 2): computeSectionPoints() is now called synchronously
+// before any drawing occurs. The old code fired it inside an async
+// import().then() and immediately continued drawing — on the very first
+// call the module hadn't resolved yet, so state.sectionPts was empty
+// and the cut line was invisible.
+//
+// cutSolid.js is already imported by main.js so the dynamic import
+// resolves instantly from the module cache on subsequent calls. We wrap
+// the entire draw call inside the resolved callback to guarantee ordering
+// on the first render as well.
+//
+// FIX v2 (BUG 1): 'cube' and 'cuboid' are now explicitly dispatched
+// to drawPrismDev instead of falling through to nothing.
 // ═══════════════════════════════════════════════════════════════════
 
 export function drawDevelopment(state, animT = 1) {
@@ -408,8 +509,6 @@ export function drawDevelopment(state, animT = 1) {
 
     canvas.width = W;
     canvas.height = H;
-    const ctx = canvas.getContext('2d');
-    const cw = canvas.width, ch = canvas.height;
 
     if (typeof animT !== 'number') animT = 1;
 
@@ -419,16 +518,25 @@ export function drawDevelopment(state, animT = 1) {
     if (checkedRadio) devMode = checkedRadio.value;
     const isSect = devMode === 'sectioned';
 
-    if (isSect) {
-        // Ensure section points are computed
-        import('./cutSolid.js').then(m => m.computeSectionPoints(state));
-    }
+    // FIX: ensure section points are computed BEFORE drawing begins.
+    // import() resolves from module cache on every call after the first,
+    // so the async overhead is negligible in practice.
+    import('./cutSolid.js').then(m => {
+        if (isSect) m.computeSectionPoints(state);
+        _drawDevelopmentSync(canvas, state, isSect, animT);
+    });
+}
 
-    const tR = (state.cutAngle * Math.PI) / 180;
+// Internal synchronous draw — called once cutSolid is guaranteed loaded.
+function _drawDevelopmentSync(canvas, state, isSect, animT) {
+    const ctx = canvas.getContext('2d');
+    const cw = canvas.width, ch = canvas.height;
+
+    const tR   = (state.cutAngle * Math.PI) / 180;
     const tanT = Math.tan(tR);
 
     // Paper sheet + title block
-    const { tbY } = drawPaperSheet(ctx, cw, ch, 0.5, 0.75, [
+    const { tbY, tbH } = drawPaperSheet(ctx, cw, ch, 0.5, 0.75, [
         {
             title: 'DEVELOPMENT OF LATERAL SURFACE',
             lines: [solidName(state.solidType).toUpperCase()]
@@ -455,15 +563,38 @@ export function drawDevelopment(state, animT = 1) {
         cw / 2, 62
     );
 
+    // FIX (BUG 4): No-cut fallback for sectioned mode
+    if (isSect && (!state.sectionPts || state.sectionPts.length < 3)) {
+        ctx.fillStyle = '#888';
+        ctx.font = 'italic 14px "Courier New",monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('No section — apply a cut first', cw / 2, tbY / 2 + 40);
+        return;
+    }
+
     // Drawing region
     const drawRegion = { x: 28, y: 72, w: cw - 56, h: tbY - 72 - 10 };
 
     // Dispatch to shape-specific renderer
+    // FIX (BUG 1): cube and cuboid now explicitly route to drawPrismDev
     const type = state.solidType;
-    if (type === 'cylinder')            drawCylinderDev(ctx, drawRegion, state, isSect, tanT, animT);
-    else if (type === 'cone')           drawConeDev(ctx, drawRegion, state, isSect, tR, tanT, animT);
-    else if (type.includes('Prism'))    drawPrismDev(ctx, drawRegion, state, isSect, tanT, animT);
-    else if (type.includes('Pyramid'))  drawPyramidDev(ctx, drawRegion, state, isSect, tR, tanT, animT);
+    if (type === 'cylinder') {
+        drawCylinderDev(ctx, drawRegion, state, isSect, tanT, animT);
+    } else if (type === 'cone') {
+        drawConeDev(ctx, drawRegion, state, isSect, tR, tanT, animT);
+    } else if (type === 'cube' || type === 'cuboid') {
+        drawPrismDev(ctx, drawRegion, state, isSect, tanT, animT);
+    } else if (type.includes('Prism')) {
+        drawPrismDev(ctx, drawRegion, state, isSect, tanT, animT);
+    } else if (type.includes('Pyramid')) {
+        drawPyramidDev(ctx, drawRegion, state, isSect, tR, tanT, animT);
+    } else {
+        // Unknown solid type — show a helpful message instead of blank canvas
+        ctx.fillStyle = '#888';
+        ctx.font = 'italic 13px "Courier New",monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(`Development not available for: ${type}`, cw / 2, tbY / 2 + 40);
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════

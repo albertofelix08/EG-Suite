@@ -1,8 +1,16 @@
 /**
  * Cut Solid Geometry — Unit III & IV
- * Section of Solids & True Shape
  * Engineering Graphics Suite
  * Alberto Felix & Aaron Mcgeo | CSE-A(I)
+ *
+ * FIXED v4:
+ *   - Angular sort axes now match the 2D projection axes used in trueShape.js
+ *     (u = X, v = −Z·cosθ + (Y−cutPos)·sinθ) so the point ordering is
+ *     consistent with the canvas drawing, preventing self-intersecting outlines
+ *     on oblique cuts through prisms and pyramids.
+ *   - triangulatePolygon now picks the two axes with the greatest spread
+ *     rather than always preferring X/Z, making it robust to any cut
+ *     orientation including edge-on cases.
  *
  * FIXED v3: Cutting plane is transformed into LOCAL SPACE of masterGroup
  * before any clipping occurs. This ensures the cut works correctly for
@@ -96,7 +104,18 @@ function getLocalCuttingPlane(state) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// SECTION POINTS  (local space  →  world space for true shape)
+// SECTION POINTS  (local space → world space for true shape)
+//
+// FIX v4: The angular sort now uses the same 2D projection axes as
+// trueShape.js so the vertex ordering is identical in both files.
+//
+// trueShape.js draws the section using:
+//   u = x  (the world/local X axis — horizontal spread)
+//   v = −z·cosθ + (y − cutPos)·sinθ  (in-plane vertical component)
+//
+// The old sort used u=z which was inconsistent with u=x in the renderer,
+// producing self-intersecting outlines for oblique cuts on non-circular
+// solids. Using matching axes ensures angular sort → drawing order matches.
 // ═══════════════════════════════════════════════════════════════════
 
 export function computeSectionPoints(state) {
@@ -152,16 +171,24 @@ export function computeSectionPoints(state) {
 
     if (uniq.length < 3) return;
 
-    // Angular sort: project points onto the cutting plane's 2D axes
-    //   u = X  (unchanged)
-    //   v = component in the YZ plane perpendicular to the plane normal
+    // ── Angular sort ──
+    // Use the same 2D axes as trueShape.js so the point ordering produced
+    // here is identical to the drawing order used when rendering the outline.
+    //
+    //   u = x   (matches trueShape proj2d u = x)
+    //   v = −z·cosθ + (y − cutPos)·sinθ   (matches trueShape proj2d v)
+    //
+    // Previously u was set to p.z, which disagreed with the renderer and
+    // caused self-intersecting polygons on oblique prism/pyramid cuts.
     const tR   = (state.cutAngle * Math.PI) / 180;
     const cosT = Math.cos(tR), sinT = Math.sin(tR);
+
     const projected = uniq.map(p => ({
         pt: [p.x, p.y, p.z],
-        u:  p.z,
-        v: -p.x * cosT + (p.y - state.cutPos) * sinT,
+        u:  p.x,                                            // FIX: was p.z
+        v: -p.z * cosT + (p.y - state.cutPos) * sinT,      // FIX: was -p.x·cosT + …
     }));
+
     const cu = projected.reduce((s, p) => s + p.u, 0) / projected.length;
     const cv = projected.reduce((s, p) => s + p.v, 0) / projected.length;
     projected.sort((a, b) =>
@@ -209,8 +236,8 @@ export function applyCutVisual(state) {
     for (let i = 0; i < idxArr.length; i += 3) {
         const tri  = [idxArr[i], idxArr[i + 1], idxArr[i + 2]];
         const vals = tri.map(k => {
-        tmpV.set(verts[k][0], verts[k][1], verts[k][2]);
-        return localPlane.distanceToPoint(tmpV);
+            tmpV.set(verts[k][0], verts[k][1], verts[k][2]);
+            return localPlane.distanceToPoint(tmpV);
         });
         clipTriangle(verts, clippedIdx, tri, vals, true);
     }
@@ -303,7 +330,8 @@ export function clearCutMeshes(state) {
 // for BufferGeometry.setIndex().
 //
 // Algorithm:
-//   1. Project points onto the cutting plane's 2D axes so we work in 2D.
+//   1. Project points onto the plane's dominant 2D axes (the two axes
+//      with the greatest coordinate spread — robust to any orientation).
 //   2. Ensure the winding is counter-clockwise (required by ear test).
 //   3. Repeatedly find and clip "ears" until only one triangle remains.
 //
@@ -311,7 +339,9 @@ export function clearCutMeshes(state) {
 //   - Has no other polygon vertices inside it, AND
 //   - Is convex (same winding as the overall polygon).
 //
-// This handles all convex AND concave section polygons correctly.
+// This handles all convex AND concave section polygons correctly, and
+// is robust to horizontal cuts (θ=0), VP orientation, and any case
+// where the old X/Z-first heuristic would have chosen a degenerate axis.
 // ═══════════════════════════════════════════════════════════════════
 
 function triangulatePolygon(pts3d) {
@@ -319,21 +349,26 @@ function triangulatePolygon(pts3d) {
     if (n < 3) return [];
     if (n === 3) return [0, 1, 2];
 
-    // ── 1. Project onto 2D (use X and Z of the local cutting plane) ──
-    // For our cutting plane the meaningful 2D spread is in X and Z
-    // (Y is constrained by the plane equation). We use the same axes
-    // as the angular sort: u=x, v=z.  Any consistent 2D projection works
-    // for the ear test as long as the plane isn't edge-on to both axes.
-    // If the polygon has no X-spread (e.g. a pure YZ slice) we fall back
-    // to using X and Y instead.
-    let pts2d;
-    const xSpread = Math.max(...pts3d.map(p => p[0])) - Math.min(...pts3d.map(p => p[0]));
-    const zSpread = Math.max(...pts3d.map(p => p[2])) - Math.min(...pts3d.map(p => p[2]));
-    if (xSpread > 0.01 || zSpread > 0.01) {
-        pts2d = pts3d.map(p => [p[0], p[2]]);
-    } else {
-        pts2d = pts3d.map(p => [p[0], p[1]]);
-    }
+    // ── 1. Project onto 2D using the two axes with the greatest spread ──
+    // Compute per-axis spread and pick the two largest. This avoids the
+    // old fragile heuristic that always preferred X/Z and failed when the
+    // polygon was edge-on to that plane (e.g. pure YZ slice, or VP mode
+    // with a steep cut angle).
+    const spreadX = Math.max(...pts3d.map(p => p[0])) - Math.min(...pts3d.map(p => p[0]));
+    const spreadY = Math.max(...pts3d.map(p => p[1])) - Math.min(...pts3d.map(p => p[1]));
+    const spreadZ = Math.max(...pts3d.map(p => p[2])) - Math.min(...pts3d.map(p => p[2]));
+
+    // Sort axes by descending spread and pick the top two
+    const axes = [
+        { idx: 0, spread: spreadX },
+        { idx: 1, spread: spreadY },
+        { idx: 2, spread: spreadZ },
+    ].sort((a, b) => b.spread - a.spread);
+
+    const ax0 = axes[0].idx; // dominant axis (most spread)
+    const ax1 = axes[1].idx; // second axis
+
+    const pts2d = pts3d.map(p => [p[ax0], p[ax1]]);
 
     // ── 2. Ensure CCW winding via signed area ──
     function signedArea(poly) {
@@ -346,8 +381,8 @@ function triangulatePolygon(pts3d) {
     const area = signedArea(pts2d);
     // Build index list in the correct winding order
     const indices = area > 0
-        ? Array.from({ length: n }, (_, i) => i)          // already CCW
-        : Array.from({ length: n }, (_, i) => n - 1 - i); // reverse to CCW
+        ? Array.from({ length: n }, (_, i) => i)           // already CCW
+        : Array.from({ length: n }, (_, i) => n - 1 - i);  // reverse to CCW
 
     // ── 3. Helpers ──
     function cross2(ax, ay, bx, by) { return ax * by - ay * bx; }
