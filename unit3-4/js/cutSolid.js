@@ -68,6 +68,7 @@ function clipTriangle(verts, outIdx, tri, vals, keepBelow) {
 
 export function computeSectionPoints(state) {
     state.sectionPts = [];
+    state._localSectionPts = [];
 
     if (!state.solidData || !state.solidGeo || !state.masterGroup) return;
 
@@ -75,8 +76,8 @@ export function computeSectionPoints(state) {
     const tanT = Math.tan(tR);
     const posArr = state.solidGeo.getAttribute('position').array;
     const idxArr = state.solidGeo.getIndex().array;
+    const onVP = !state.restOnHP;
 
-    // Collect unique edges from local-space geometry
     const edgeSet = new Set();
     for (let i = 0; i < idxArr.length; i += 3) {
         const a = idxArr[i], b = idxArr[i + 1], c = idxArr[i + 2];
@@ -85,7 +86,6 @@ export function computeSectionPoints(state) {
         });
     }
 
-    // Get local-space vertex (no world transform)
     function localPt(rawIdx) {
         return [
             posArr[rawIdx * 3],
@@ -94,14 +94,21 @@ export function computeSectionPoints(state) {
         ];
     }
 
-    // Find intersections in local space
     const localPts = [];
     edgeSet.forEach(key => {
         const [i1, i2] = key.split(',').map(Number);
         const p1 = localPt(i1), p2 = localPt(i2);
 
-        const f1 = p1[1] + p1[2] * tanT - state.cutPos;
-        const f2 = p2[1] + p2[2] * tanT - state.cutPos;
+        let f1, f2;
+        if (onVP) {
+            // Resting on VP: solid's "up" is Z. Plane: Z - slope * Y = cutPos
+            f1 = p1[2] - slope * p1[1] - state.cutPos;
+            f2 = p2[2] - slope * p2[1] - state.cutPos;
+        } else {
+            // Resting on HP: solid's "up" is Y. Plane: Y - slope * Z = cutPos
+            f1 = p1[1] - slope * p1[2] - state.cutPos;
+            f2 = p2[1] - slope * p2[2] - state.cutPos;
+        }
 
         if (f1 * f2 < 0) {
             const t = f1 / (f1 - f2);
@@ -113,7 +120,6 @@ export function computeSectionPoints(state) {
         }
     });
 
-    // Deduplicate
     const uniq = [];
     localPts.forEach(p => {
         if (!uniq.some(u => Math.hypot(p[0] - u[0], p[1] - u[1], p[2] - u[2]) < 0.1)) {
@@ -123,13 +129,19 @@ export function computeSectionPoints(state) {
 
     if (uniq.length < 3) return;
 
-    // Sort angularly in local space (project onto cutting plane)
+    // Sort angularly — project onto cutting plane's local 2D
     const cosT = Math.cos(tR), sinT = Math.sin(tR);
-    const projected = uniq.map(p => ({
-        pt: p,
-        u: p[0],
-        v: -p[2] * cosT + (p[1] - state.cutPos) * sinT,
-    }));
+    const projected = uniq.map(p => {
+        let u, v;
+        if (onVP) {
+            u = p[0];
+            v = -p[1] * cosT + (p[2] - state.cutPos) * sinT;
+        } else {
+            u = p[0];
+            v = -p[2] * cosT + (p[1] - state.cutPos) * sinT;
+        }
+        return { pt: p, u, v };
+    });
     const cu = projected.reduce((s, p) => s + p.u, 0) / projected.length;
     const cv = projected.reduce((s, p) => s + p.v, 0) / projected.length;
     projected.sort((a, b) =>
@@ -138,7 +150,6 @@ export function computeSectionPoints(state) {
 
     state._localSectionPts = projected.map(p => p.pt);
 
-    // Transform to world space for true shape
     state.masterGroup.updateMatrixWorld(true);
     const mat = state.masterGroup.matrixWorld;
     state.sectionPts = state._localSectionPts.map(([x, y, z]) => {
@@ -152,7 +163,6 @@ export function computeSectionPoints(state) {
 // ═══════════════════════════════════════════════════════════════════
 
 export function applyCutVisual(state) {
-    // Clear existing
     while (state.solidGroup.children.length) {
         state.solidGroup.remove(state.solidGroup.children[0]);
     }
@@ -164,22 +174,25 @@ export function applyCutVisual(state) {
     const tanT = Math.tan(tR);
     const posArr = state.solidGeo.getAttribute('position').array;
     const idxArr = state.solidGeo.getIndex().array;
+    const onVP = !state.restOnHP;
 
-    // Local-space vertices (flat copies for clipping)
     const verts = [];
     for (let i = 0; i < posArr.length; i += 3) {
         verts.push([posArr[i], posArr[i + 1], posArr[i + 2]]);
     }
 
-    // Clip: keep Y + Z*tanT <= cutPos
     const clippedIdx = [];
     for (let i = 0; i < idxArr.length; i += 3) {
         const tri = [idxArr[i], idxArr[i + 1], idxArr[i + 2]];
-        const vals = tri.map(k => verts[k][1] + verts[k][2] * tanT - state.cutPos);
+        let vals;
+        if (onVP) {
+            vals = tri.map(k => verts[k][2] - slope * verts[k][1] - state.cutPos);
+        } else {
+            vals = tri.map(k => verts[k][1] - slope * verts[k][2] - state.cutPos);
+        }
         clipTriangle(verts, clippedIdx, tri, vals, true);
     }
 
-    // Build clipped geometry
     const flatVerts = [];
     verts.forEach(v => flatVerts.push(...v));
 
@@ -188,19 +201,12 @@ export function applyCutVisual(state) {
     cGeo.setIndex(clippedIdx);
     cGeo.computeVertexNormals();
 
-    // Solid mesh
-    const meshSolid = new THREE.Mesh(
-        cGeo,
-        new THREE.MeshPhongMaterial({
-            color: 0xf97316,
-            flatShading: true,
-            side: THREE.DoubleSide,
-        })
-    );
+    const meshSolid = new THREE.Mesh(cGeo, new THREE.MeshPhongMaterial({
+        color: 0xf97316, flatShading: true, side: THREE.DoubleSide,
+    }));
     meshSolid.castShadow = true;
     meshSolid.receiveShadow = true;
 
-    // Wireframe
     const meshEdges = new THREE.LineSegments(
         new THREE.EdgesGeometry(cGeo, 15),
         new THREE.LineBasicMaterial({ color: 0x000000 })
@@ -211,28 +217,20 @@ export function applyCutVisual(state) {
     state.solidGroup.add(meshSolid);
     state.solidGroup.add(meshEdges);
 
-    // Section face cap (red) — use local section points
     if (state._localSectionPts && state._localSectionPts.length >= 3) {
         const sGeo = new THREE.BufferGeometry();
         const sv = [];
         state._localSectionPts.forEach(p => sv.push(...p));
         sGeo.setAttribute('position', new THREE.Float32BufferAttribute(sv, 3));
-
         const si = [];
         for (let i = 1; i < state._localSectionPts.length - 1; i++) {
             si.push(0, i, i + 1);
         }
         sGeo.setIndex(si);
         sGeo.computeVertexNormals();
-
-        const meshSection = new THREE.Mesh(
-            sGeo,
-            new THREE.MeshPhongMaterial({
-                color: 0xef4444,
-                side: THREE.DoubleSide,
-                flatShading: true,
-            })
-        );
+        const meshSection = new THREE.Mesh(sGeo, new THREE.MeshPhongMaterial({
+            color: 0xef4444, side: THREE.DoubleSide, flatShading: true,
+        }));
         state._cutMeshes.push(meshSection);
         state.solidGroup.add(meshSection);
     }
