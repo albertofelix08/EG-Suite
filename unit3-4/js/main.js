@@ -284,6 +284,7 @@ function applyCut() {
     state.cutAngle = parseFloat(document.getElementById('cutAngle').value) || 45;
     state.cutPos = parseFloat(document.getElementById('cutPos').value) || 40;
 
+
     clearCutMeshes(state);
     computeSectionPoints(state);
     applyCutVisual(state);
