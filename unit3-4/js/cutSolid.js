@@ -4,16 +4,12 @@
  * Engineering Graphics Suite
  * Alberto Felix & Aaron Mcgeo | CSE-A(I)
  *
- * FIXED v2: All cutting happens in LOCAL SPACE (before axis rotation).
- * The cut mesh stays in solidGroup at origin. applyAxisOrientation()
- * rotates masterGroup, so the cut solid follows naturally.
+ * v2.1 — Consistent HP/VP plane equation in both functions.
  *
- * Cutting plane equation (local space):
- *   Y + Z * tan(angle) = cutPos
- *   Keep vertices where Y + Z*tanT <= cutPos
+ * HP resting: solid's up axis = Y. Plane: Y - tan(angle) * Z = cutPos
+ * VP resting: solid's up axis = Z. Plane: Z - tan(angle) * Y = cutPos
  *
- * Section points are computed in local space, then transformed
- * to world space (via masterGroup.matrixWorld) for true shape.
+ * Keep vertices BELOW the plane (value <= 0).
  */
 
 import * as THREE from 'three';
@@ -63,6 +59,24 @@ function clipTriangle(verts, outIdx, tri, vals, keepBelow) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// SIGNED DISTANCE FROM CUTTING PLANE
+// ═══════════════════════════════════════════════════════════════════
+
+function planeValue(x, y, z, tanT, cutPos, onVP) {
+    if (onVP) {
+        // Resting on VP: solid's "up" is Z
+        // Cutting plane: Z - tanT * Y = cutPos
+        // Keep vertices where Z - tanT * Y <= cutPos
+        return z - tanT * y - cutPos;
+    } else {
+        // Resting on HP: solid's "up" is Y
+        // Cutting plane: Y - tanT * Z = cutPos
+        // Keep vertices where Y - tanT * Z <= cutPos
+        return y - tanT * z - cutPos;
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // SECTION POINTS (local space → transformed to world for true shape)
 // ═══════════════════════════════════════════════════════════════════
 
@@ -74,10 +88,9 @@ export function computeSectionPoints(state) {
 
     const tR = (state.cutAngle * Math.PI) / 180;
     const tanT = Math.tan(tR);
-    const slope = tanT; 
+    const onVP = !state.restOnHP;
     const posArr = state.solidGeo.getAttribute('position').array;
     const idxArr = state.solidGeo.getIndex().array;
-    const onVP = !state.restOnHP;
 
     const edgeSet = new Set();
     for (let i = 0; i < idxArr.length; i += 3) {
@@ -100,16 +113,8 @@ export function computeSectionPoints(state) {
         const [i1, i2] = key.split(',').map(Number);
         const p1 = localPt(i1), p2 = localPt(i2);
 
-        let f1, f2;
-        if (onVP) {
-            // Resting on VP: solid's "up" is Z. Plane: Z - slope * Y = cutPos
-            f1 = p1[2] - slope * p1[1] - state.cutPos;
-            f2 = p2[2] - slope * p2[1] - state.cutPos;
-        } else {
-            // Resting on HP: solid's "up" is Y. Plane: Y - slope * Z = cutPos
-            f1 = p1[1] - slope * p1[2] - state.cutPos;
-            f2 = p2[1] - slope * p2[2] - state.cutPos;
-        }
+        const f1 = planeValue(p1[0], p1[1], p1[2], tanT, state.cutPos, onVP);
+        const f2 = planeValue(p2[0], p2[1], p2[2], tanT, state.cutPos, onVP);
 
         if (f1 * f2 < 0) {
             const t = f1 / (f1 - f2);
@@ -173,10 +178,9 @@ export function applyCutVisual(state) {
 
     const tR = (state.cutAngle * Math.PI) / 180;
     const tanT = Math.tan(tR);
-    const slope = tanT;
+    const onVP = !state.restOnHP;
     const posArr = state.solidGeo.getAttribute('position').array;
     const idxArr = state.solidGeo.getIndex().array;
-    const onVP = !state.restOnHP;
 
     const verts = [];
     for (let i = 0; i < posArr.length; i += 3) {
@@ -186,12 +190,7 @@ export function applyCutVisual(state) {
     const clippedIdx = [];
     for (let i = 0; i < idxArr.length; i += 3) {
         const tri = [idxArr[i], idxArr[i + 1], idxArr[i + 2]];
-        let vals;
-        if (onVP) {
-            vals = tri.map(k => verts[k][2] - slope * verts[k][1] - state.cutPos);
-        } else {
-            vals = tri.map(k => verts[k][1] - slope * verts[k][2] - state.cutPos);
-        }
+        const vals = tri.map(k => planeValue(verts[k][0], verts[k][1], verts[k][2], tanT, state.cutPos, onVP));
         clipTriangle(verts, clippedIdx, tri, vals, true);
     }
 
