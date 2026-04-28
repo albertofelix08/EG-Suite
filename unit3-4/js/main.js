@@ -14,7 +14,7 @@
 import * as THREE from 'three';
 
 // ── Imports from our modules (will be created next) ──
-import { initScene, createRefPlanes, applyAxisOrientation, setStatus, updateAxesOverlay } from './scene.js';
+import { initScene, createRefPlanes, applyAxisOrientation, setStatus, updateAxesOverlay, getControls, toggleGrid, toggleAxes, setOpaqueMode, applyPlaneMode } from './scene.js';
 import { buildSolidMesh } from './solids.js';
 import { computeSectionPoints, applyCutVisual, clearCutMeshes } from './cutSolid.js';
 import { createCuttingPlane, removeCuttingPlane, updateCuttingPlane } from './sectionPlane.js';
@@ -375,7 +375,18 @@ function setupSidebarListeners() {
     document.querySelectorAll('input[name="restPos"]').forEach(radio => {
         radio.addEventListener('change', () => {
             state.restOnHP = document.querySelector('input[name="restPos"]:checked').value === 'HP';
+
+            // Reset cutPos to a sensible default when switching mode so the
+            // cut position stays inside the solid's valid range (0 → solidH).
+            const safeDefault = Math.round(state.solidH * 0.55);
+            state.cutPos = safeDefault;
+            const cutPosSlider = document.getElementById('cutPos');
+            const cutPosVal    = document.getElementById('cutPosVal');
+            if (cutPosSlider) cutPosSlider.value = safeDefault;
+            if (cutPosVal)    cutPosVal.value    = safeDefault;
+
             applyAxisOrientation(state);
+            if (state.cutPlaneVisible && !state.isCutApplied) updateCuttingPlane(state);
             redrawActiveTab();
         });
     });
@@ -401,38 +412,32 @@ function setupSidebarListeners() {
 
     // ── Quick views ──
     document.getElementById('viewIsoBtn').addEventListener('click', () => setIsometricView(state));
-        document.getElementById('viewFrontBtn').addEventListener('click', () => {
-        import('./scene.js').then(sceneMod => {
-            import('./cameraControls.js').then(m =>
-                m.setView('front', sceneMod.getCamera(), sceneMod.getControls())
-            );
-        });
+    document.getElementById('viewFrontBtn').addEventListener('click', () => {
+        import('./cameraControls.js').then(m =>
+            m.setView('front', state.camera, getControls())
+        );
     });
     document.getElementById('viewTopBtn').addEventListener('click', () => {
-        import('./scene.js').then(sceneMod => {
-            import('./cameraControls.js').then(m =>
-                m.setView('top', sceneMod.getCamera(), sceneMod.getControls())
-            );
-        });
+        import('./cameraControls.js').then(m =>
+            m.setView('top', state.camera, getControls())
+        );
     });
     document.getElementById('viewSideBtn').addEventListener('click', () => {
-        import('./scene.js').then(sceneMod => {
-            import('./cameraControls.js').then(m =>
-                m.setView('side', sceneMod.getCamera(), sceneMod.getControls())
-            );
-        });
+        import('./cameraControls.js').then(m =>
+            m.setView('side', state.camera, getControls())
+        );
     });
     document.getElementById('resetViewBtn').addEventListener('click', () => setIsometricView(state));
 
     // ── Display toggles ──
     document.getElementById('showGridToggle').addEventListener('change', (e) => {
-        import('./scene.js').then(m => m.toggleGrid(e.target.checked));
+        toggleGrid(e.target.checked);
     });
     document.getElementById('showAxesToggle').addEventListener('change', (e) => {
-        import('./scene.js').then(m => m.toggleAxes(e.target.checked));
+        toggleAxes(e.target.checked);
     });
     document.getElementById('opaqueModeToggle').addEventListener('change', (e) => {
-        import('./scene.js').then(m => m.setOpaqueMode(e.target.checked));
+        setOpaqueMode(e.target.checked);
     });
 
     // ── Axis orientation ──
@@ -472,14 +477,14 @@ function setupSidebarListeners() {
 
     // ── Reference plane controls ──
     document.getElementById('hpVisibleCB').addEventListener('change', () => {
-        import('./scene.js').then(m => m.applyPlaneMode());
+        applyPlaneMode();
     });
     document.getElementById('vpVisibleCB').addEventListener('change', () => {
-        import('./scene.js').then(m => m.applyPlaneMode());
+        applyPlaneMode();
     });
     document.querySelectorAll('input[name="hpMode"], input[name="vpMode"]').forEach(radio => {
         radio.addEventListener('change', () => {
-            import('./scene.js').then(m => m.applyPlaneMode());
+            applyPlaneMode();
         });
     });
 
@@ -605,10 +610,9 @@ function onResize() {
 
 function renderLoop() {
     requestAnimationFrame(renderLoop);
-    import('./scene.js').then(m => {
-        if (m.getControls()) m.getControls().update();
-        updateAxesOverlay();  // ← Use the imported function, not _updateAxesOverlay
-    });
+    const ctrl = getControls();
+    if (ctrl) ctrl.update();
+    updateAxesOverlay();
     if (state.renderer && state.scene && state.camera) {
         state.renderer.render(state.scene, state.camera);
     }

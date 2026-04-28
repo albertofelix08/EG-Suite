@@ -3,12 +3,9 @@
  * Engineering Graphics Suite
  * Alberto Felix & Aaron Mcgeo | CSE-A(I)
  *
- * Generates BufferGeometry for all 8 solid types:
- *   Prisms: hexagonal, pentagonal, cylinder, cube, cuboid
- *   Pyramids: hexagonal, pentagonal, cone
- *
- * Every solid is built with base at Y=0 and top at Y=height.
- * boundaryEdges[] stores the unique wireframe edges (no diagonals).
+ * Generates BufferGeometry for all 8 solid types.
+ * Every solid is built with base at Y=0 and top at Y=height in local space.
+ * Boundary edges stored for clean wireframes (no diagonals).
  */
 
 import * as THREE from 'three';
@@ -37,9 +34,6 @@ export function buildSolidMesh(state) {
     let data;
     let boundaryEdges = [];
 
-    // ── COMMON: Convert flat arrays to Vector3-style points ──
-    // all[] will store [x, y, z] for every vertex; used later by boundary edges
-
     if (type === 'hexPrism' || type === 'pentPrism') {
         const n = type === 'hexPrism' ? 6 : 5;
         const base = genPolygonBase(n, r);
@@ -48,19 +42,16 @@ export function buildSolidMesh(state) {
         data = { all: [...bot, ...top], n, solidType: 'prism' };
         data.all.forEach(v => vertices.push(...v));
 
-        // Bottom cap (fan triangulation)
         for (let i = 1; i < n - 1; i++) indices.push(0, i + 1, i);
-        // Top cap
         for (let i = 1; i < n - 1; i++) indices.push(n, n + i, n + i + 1);
-        // Lateral faces
         for (let i = 0; i < n; i++) {
             const i2 = (i + 1) % n;
             indices.push(i, i2, n + i2);
             indices.push(i, n + i2, n + i);
-            boundaryEdges.push([i, i2]);          // bottom edge
-            boundaryEdges.push([n + i, n + i2]);   // top edge
-            boundaryEdges.push([i, n + i]);        // vertical left
-            boundaryEdges.push([i2, n + i2]);      // vertical right
+            boundaryEdges.push([i, i2]);
+            boundaryEdges.push([n + i, n + i2]);
+            boundaryEdges.push([i, n + i]);
+            boundaryEdges.push([i2, n + i2]);
         }
     }
 
@@ -72,15 +63,13 @@ export function buildSolidMesh(state) {
         data = { all: [...bot, [0, h, 0]], n, solidType: 'pyramid' };
         data.all.forEach(v => vertices.push(...v));
 
-        // Bottom cap
         for (let i = 1; i < n - 1; i++) indices.push(0, i + 1, i);
-        // Lateral triangular faces
         for (let i = 0; i < n; i++) {
             const i2 = (i + 1) % n;
             indices.push(i, i2, apexIdx);
-            boundaryEdges.push([i, i2]);        // base edge
-            boundaryEdges.push([i, apexIdx]);    // slant edge
-            boundaryEdges.push([i2, apexIdx]);   // slant edge
+            boundaryEdges.push([i, i2]);
+            boundaryEdges.push([i, apexIdx]);
+            boundaryEdges.push([i2, apexIdx]);
         }
     }
 
@@ -129,7 +118,7 @@ export function buildSolidMesh(state) {
     }
 
     else if (type === 'cube') {
-        const s = r; // side length
+        const s = r;
         const bx = [-s / 2, s / 2, s / 2, -s / 2];
         const bz = [-s / 2, -s / 2, s / 2, s / 2];
         const bot = bx.map((x, i) => [x, 0, bz[i]]);
@@ -137,11 +126,8 @@ export function buildSolidMesh(state) {
         data = { all: [...bot, ...top], n: 4, solidType: 'prism', isCuboid: true, w: s, d: s };
         data.all.forEach(v => vertices.push(...v));
 
-        // Bottom cap
         indices.push(0, 1, 2); indices.push(0, 2, 3);
-        // Top cap
         indices.push(4, 6, 5); indices.push(4, 7, 6);
-        // Sides
         for (let i = 0; i < 4; i++) {
             const i2 = (i + 1) % 4;
             indices.push(i, i2, 4 + i2);
@@ -153,8 +139,8 @@ export function buildSolidMesh(state) {
     }
 
     else if (type === 'cuboid') {
-        const hw = r / 2;  // r is width
-        const hd = d / 2;  // d is depth
+        const hw = r / 2;
+        const hd = d / 2;
         const bx = [-hw, hw, hw, -hw];
         const bz = [-hd, -hd, hd, hd];
         const bot = bx.map((x, i) => [x, 0, bz[i]]);

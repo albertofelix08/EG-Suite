@@ -197,13 +197,14 @@ function OrbitControls(object, domElement) {
         else if (e.deltaY > 0) scale *= zoomScale();
     }
 
+    const preventContext = e => e.preventDefault();
     const el = domElement || document;
-    el.addEventListener('contextmenu', e => e.preventDefault());
+    el.addEventListener('contextmenu', preventContext);
     el.addEventListener('mousedown', onMouseDown);
     el.addEventListener('wheel', onWheel, { passive: false });
 
     this.dispose = function() {
-        el.removeEventListener('contextmenu', e => e.preventDefault());
+        el.removeEventListener('contextmenu', preventContext);
         el.removeEventListener('mousedown', onMouseDown);
         el.removeEventListener('wheel', onWheel);
     };
@@ -586,7 +587,7 @@ export function applyAxisOrientation(state) {
     // Stage 6: Position adjustment with BUFFER ZONE
     masterGroup.updateMatrixWorld(true);
     
-    if (solidGroup) {
+    if (solidGroup && solidGroup.children.length > 0) {
         const box = new THREE.Box3().setFromObject(masterGroup);
         
         if (state.restOnHP) {
