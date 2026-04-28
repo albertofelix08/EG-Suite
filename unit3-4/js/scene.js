@@ -553,10 +553,12 @@ export function applyAxisOrientation(state) {
     masterGroup.position.set(0, 0, 0);
     masterGroup.updateMatrix();
 
-    // Stage 1: Resting plane
     if (!state.restOnHP) {
-        // Resting on VP - rotate so base faces VP
-        masterGroup.rotateX(-Math.PI / 2);
+        // For pyramids and cones, the apex should face away from VP (+Z direction)
+        // so rotate +90° instead of -90°
+        const isPyramid = state.solidType === 'pyramid' || state.solidType === 'cone'
+            || state.solidType === 'hexPyramid' || state.solidType === 'pentPyramid';
+        masterGroup.rotateX(isPyramid ? Math.PI / 2 : -Math.PI / 2);
     }
 
     // Stage 2: Plan rotation for VP angle
