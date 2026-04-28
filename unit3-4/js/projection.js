@@ -6,21 +6,11 @@
  */
 
 import * as THREE from 'three';
-import { getWorldGeometry, buildEdgeVisibility } from './solids.js';
+import { getWorldGeometry, buildEdgeVisibility, solidName } from './solids.js';
 
-// ═══════════════════════════════════════════════════════════════════
-// DRAWING HELPERS
-// ═══════════════════════════════════════════════════════════════════
-
-function solidName(type) {
-    const map = {
-        hexPrism: 'Hexagonal Prism', pentPrism: 'Pentagonal Prism',
-        cylinder: 'Cylinder', cube: 'Cube', cuboid: 'Cuboid',
-        hexPyramid: 'Hexagonal Pyramid', pentPyramid: 'Pentagonal Pyramid',
-        cone: 'Cone',
-    };
-    return map[type] || type;
-}
+// solidName is now imported from solids.js — the single source of truth.
+// This means triPrism, triPyramid, squarePyramid (and any future types)
+// are automatically covered here without any per-file maintenance.
 
 function drawPaperSheet(ctx, cw, ch, col1Frac, col2Frac, cols) {
     ctx.fillStyle = '#0f172a';
@@ -253,10 +243,15 @@ export function drawProjections(state) {
 
     const titleMode = sectioned ? 'SECTIONED VIEWS' : 'PROJECTION OF SOLIDS';
 
+    const isCuboidProj = state.solidType === 'cuboid';
+    const dimLineProj  = isCuboidProj
+        ? `W=${state.solidR}mm  D=${state.solidD}mm  H=${state.solidH}mm`
+        : `H=${state.solidH}mm  R=${state.solidR}mm`;
+
     const { tbY, tbH } = drawPaperSheet(ctx, cw, ch, 0.5, 0.75, [
         {
             title: titleMode,
-            lines: [solidName(state.solidType).toUpperCase(), `H=${state.solidH}mm  R=${state.solidR}mm`]
+            lines: [solidName(state.solidType).toUpperCase(), dimLineProj]
         },
         {
             title: 'AXIS ORIENTATION',

@@ -74,6 +74,7 @@
                         <optgroup label="Prisms">
                             <option value="hexPrism" selected>Hexagonal Prism</option>
                             <option value="pentPrism">Pentagonal Prism</option>
+                            <option value="triPrism">Triangular Prism</option>
                             <option value="cylinder">Cylinder</option>
                             <option value="cube">Cube</option>
                             <option value="cuboid">Cuboid</option>
@@ -81,6 +82,8 @@
                         <optgroup label="Pyramids">
                             <option value="hexPyramid">Hexagonal Pyramid</option>
                             <option value="pentPyramid">Pentagonal Pyramid</option>
+                            <option value="squarePyramid">Square Pyramid</option>
+                            <option value="triPyramid">Triangular Pyramid</option>
                             <option value="cone">Cone</option>
                         </optgroup>
                     </select>
@@ -190,6 +193,16 @@
                         ⚙ AXIS ORIENTATION <span class="collapse-arrow">▸</span>
                     </div>
                     <div class="collapse-content" id="axisAdvanced" style="display:none">
+                        <!-- Quick-set buttons for common exam orientations (Fix 5.1) -->
+                        <div class="ctrl-note" style="margin-bottom:4px">Quick Orientations</div>
+                        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px" id="orientPresets">
+                            <button class="quick-load-btn orient-btn" data-hp="90" data-vp="90" title="Axis ⊥ HP (upright)">⊥ HP</button>
+                            <button class="quick-load-btn orient-btn" data-hp="30" data-vp="90" title="Axis at 30° to HP">30°</button>
+                            <button class="quick-load-btn orient-btn" data-hp="45" data-vp="90" title="Axis at 45° to HP">45°</button>
+                            <button class="quick-load-btn orient-btn" data-hp="60" data-vp="90" title="Axis at 60° to HP">60°</button>
+                            <button class="quick-load-btn orient-btn" data-hp="0"  data-vp="90" title="Axis on HP (lying)">On HP</button>
+                            <button class="quick-load-btn orient-btn" data-hp="90" data-vp="0"  title="Axis on VP">On VP</button>
+                        </div>
                         <div class="dim-row">
                             <label class="dim-label-text">∠ with HP <span class="unit">°</span></label>
                             <div class="dim-control">
