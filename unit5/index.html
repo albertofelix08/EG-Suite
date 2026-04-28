@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Unit V — Isometric Projections | Engineering Graphics</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "../../common/three.module.js",
+                "three/addons/": "../../common/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div class="app-container">
+
+        <!-- HEADER -->
+        <header class="header">
+            <div class="header-left">
+                <a href="../index.html" class="back-btn" title="Back to Suite Launcher">← Suite</a>
+                <div class="logo-mark">V</div>
+                <div class="title-block">
+                    <h1>Engineering Graphics Simulator</h1>
+                    <span class="subtitle">Unit V — Isometric Projections &amp; Orthographic Views</span>
+                </div>
+            </div>
+            <div class="header-center">
+                <div class="view-mode-switcher">
+                    <button class="mode-btn active" id="modeIso" data-mode="iso">
+                        <span class="mode-icon">⬡</span> Isometric
+                    </button>
+                    <button class="mode-btn" id="modeOrtho" data-mode="ortho">
+                        <span class="mode-icon">⊞</span> Orthographic
+                    </button>
+                    <button class="mode-btn" id="modeSplit" data-mode="split">
+                        <span class="mode-icon">⊟</span> Split View
+                    </button>
+                </div>
+            </div>
+            <div class="header-right">
+                <button class="export-btn" id="exportBtn" title="Export as PNG">↓ Export PNG</button>
+                <div class="credits-block">
+                    <span class="credits-names">Alberto Felix &amp; Aaron Mcgeo</span>
+                    <span class="credits-class">CSE-A(I)</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- MAIN -->
+        <div class="main-layout">
+
+            <!-- LEFT PANEL -->
+            <aside class="sidebar" id="sidebar">
+
+                <div class="panel-section">
+                    <div class="section-label">SOLID TYPE</div>
+                    <div class="solid-type-grid">
+                        <button class="solid-type-btn active" data-type="prism"><span class="solid-icon">▲</span><span>Prism</span></button>
+                        <button class="solid-type-btn" data-type="pyramid"><span class="solid-icon">△</span><span>Pyramid</span></button>
+                        <button class="solid-type-btn" data-type="cylinder"><span class="solid-icon">⬭</span><span>Cylinder</span></button>
+                        <button class="solid-type-btn" data-type="cone"><span class="solid-icon">▽</span><span>Cone</span></button>
+                        <button class="solid-type-btn" data-type="cuboid"><span class="solid-icon">□</span><span>Cuboid</span></button>
+                        <button class="solid-type-btn" data-type="frustum"><span class="solid-icon">⬠</span><span>Frustum</span></button>
+                    </div>
+                </div>
+
+                <div class="panel-section" id="baseShapeSection">
+                    <div class="section-label">BASE POLYGON</div>
+                    <div class="polygon-btns">
+                        <button class="poly-btn" data-sides="3">△<br><small>3</small></button>
+                        <button class="poly-btn active" data-sides="4">□<br><small>4</small></button>
+                        <button class="poly-btn" data-sides="5">⬟<br><small>5</small></button>
+                        <button class="poly-btn" data-sides="6">⬡<br><small>6</small></button>
+                    </div>
+                </div>
+
+                <div class="panel-section">
+                    <div class="section-label">DIMENSIONS</div>
+                    <div class="dim-row">
+                        <label>Base Size <span class="unit">mm</span></label>
+                        <div class="dim-control">
+                            <input type="range" id="baseSize" min="10" max="80" step="1" value="40">
+                            <input type="number" id="baseSizeVal" value="40" min="10" max="80" step="1">
+                        </div>
+                    </div>
+                    <div class="dim-row">
+                        <label>Height <span class="unit">mm</span></label>
+                        <div class="dim-control">
+                            <input type="range" id="height" min="10" max="100" step="1" value="60">
+                            <input type="number" id="heightVal" value="60" min="10" max="100" step="1">
+                        </div>
+                    </div>
+                    <div class="dim-row" id="frustumTopRow" style="display:none">
+                        <label>Top Size <span class="unit">mm</span></label>
+                        <div class="dim-control">
+                            <input type="range" id="frustumTop" min="5" max="60" step="1" value="20">
+                            <input type="number" id="frustumTopVal" value="20" min="5" max="60" step="1">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel-section">
+                    <div class="section-label">PROJECTION SETTINGS</div>
+                    <div class="toggle-row">
+                        <label class="toggle-label" for="isometricScale">Isometric Scale (0.816:1)<span class="label-hint">True isometric foreshortening</span></label>
+                        <label class="toggle"><input type="checkbox" id="isometricScale" checked><span class="toggle-track"></span></label>
+                    </div>
+                    <div class="toggle-row">
+                        <label class="toggle-label" for="opaqueMode">Opaque Mode<span class="label-hint">Hide edges behind faces</span></label>
+                        <label class="toggle"><input type="checkbox" id="opaqueMode"><span class="toggle-track"></span></label>
+                    </div>
+                    <div class="toggle-row">
+                        <label class="toggle-label" for="showAxes">Show Isometric Axes<span class="label-hint">30°/90°/150° reference lines</span></label>
+                        <label class="toggle"><input type="checkbox" id="showAxes"><span class="toggle-track"></span></label>
+                    </div>
+                    <div class="toggle-row">
+                        <label class="toggle-label" for="showConstruction">Construction Lines<span class="label-hint">Bounding box &amp; projectors</span></label>
+                        <label class="toggle"><input type="checkbox" id="showConstruction" checked><span class="toggle-track"></span></label>
+                    </div>
+                    <div class="toggle-row">
+                        <label class="toggle-label" for="showDimensions">Dimension Annotations<span class="label-hint">Live size labels on solid</span></label>
+                        <label class="toggle"><input type="checkbox" id="showDimensions" checked><span class="toggle-track"></span></label>
+                    </div>
+                </div>
+
+                <div class="panel-section">
+                    <div class="section-label">TRUNCATION (CUT)</div>
+                    <div class="toggle-row">
+                        <label class="toggle-label" for="truncatedMode">Enable Cutting Plane</label>
+                        <label class="toggle"><input type="checkbox" id="truncatedMode"><span class="toggle-track"></span></label>
+                    </div>
+                    <div id="truncationControls" style="display:none">
+                        <div class="dim-row">
+                            <label>Cut Height <span class="unit">mm</span></label>
+                            <div class="dim-control">
+                                <input type="range" id="cutHeight" min="0" max="100" step="1" value="30">
+                                <input type="number" id="cutHeightVal" value="30" min="0" max="100" step="1">
+                            </div>
+                        </div>
+                        <div class="dim-row">
+                            <label>Cut Angle <span class="unit">°</span></label>
+                            <div class="dim-control">
+                                <input type="range" id="cutAngle" min="0" max="85" step="1" value="30">
+                                <input type="number" id="cutAngleVal" value="30" min="0" max="85" step="1">
+                            </div>
+                        </div>
+                        <button id="cutBtn" class="cut-btn">✂ APPLY CUT</button>
+                        <button id="resetCutBtn" class="reset-cut-btn">↺ Reset Cut</button>
+                    </div>
+                </div>
+
+                <div class="panel-section">
+                    <div class="section-label">QUICK VIEWS</div>
+                    <div class="quick-view-grid">
+                        <button class="qv-btn" id="viewIsoBtn">Isometric</button>
+                        <button class="qv-btn" id="viewFrontBtn">Front (VP)</button>
+                        <button class="qv-btn" id="viewTopBtn">Plan (HP)</button>
+                        <button class="qv-btn" id="viewSideBtn">Side (PP)</button>
+                    </div>
+                    <button class="reset-view-btn" id="resetViewBtn">⟳ Reset View</button>
+                </div>
+
+                <div class="edu-card">
+                    <div class="edu-card-title">📐 Isometric Axes</div>
+                    <div class="edu-card-body">
+                        <div class="axis-row"><span class="axis-x">X-axis</span> — 30° from horizontal (right)</div>
+                        <div class="axis-row"><span class="axis-z">Z-axis</span> — 30° from horizontal (left)</div>
+                        <div class="axis-row"><span class="axis-y">Y-axis</span> — Vertical (90°)</div>
+                        <div class="axis-row scale-note">Foreshortening: <strong>0.816 : 1</strong></div>
+                    </div>
+                </div>
+
+            </aside>
+
+            <!-- VIEWPORT -->
+            <div class="viewport-area" id="viewportArea">
+                <div class="viewport-single" id="viewSingle">
+                    <canvas id="canvas"></canvas>
+                    <div class="viewport-label">ISOMETRIC VIEW</div>
+                    <div class="info-overlay">
+                        <div class="info-chip" id="scaleChip">Scale: Isometric (0.816:1)</div>
+                        <div class="info-chip" id="dimChip">40mm × 60mm</div>
+                    </div>
+                    <div class="controls-hint">Right-drag: Rotate &nbsp;|&nbsp; Scroll: Zoom &nbsp;|&nbsp; Shift+drag: Pan</div>
+                </div>
+                <div class="viewport-split" id="viewSplit" style="display:none">
+                    <div class="split-cell" id="splitIso"><canvas id="canvasIso"></canvas><div class="split-label">ISOMETRIC</div></div>
+                    <div class="split-cell" id="splitFront"><canvas id="canvasFront"></canvas><div class="split-label">FRONT VIEW (VP)</div></div>
+                    <div class="split-cell" id="splitTop"><canvas id="canvasTop"></canvas><div class="split-label">PLAN VIEW (HP)</div></div>
+                    <div class="split-cell" id="splitSide"><canvas id="canvasSide"></canvas><div class="split-label">SIDE VIEW (PP)</div></div>
+                </div>
+                <div class="legend-panel">
+                    <div class="legend-title">LEGEND</div>
+                    <div class="legend-item"><span class="legend-dot" style="background:#ff6b6b"></span>Isometric Axes</div>
+                    <div class="legend-item"><span class="legend-dot" style="background:#4ecdc4"></span>Base Construction</div>
+                    <div class="legend-item"><span class="legend-dot" style="background:#ffe66d"></span>Height Projectors</div>
+                    <div class="legend-item"><span class="legend-dot" style="background:#95e77e"></span>Cutting Plane</div>
+                </div>
+            </div>
+        </div>
+
+        <footer class="footer">
+            <span>Unit V: Isometric Projections &amp; Freehand Sketching — Engineering Graphics</span>
+            <span>CO5: Develop spatial imagination for engineering communication</span>
+            <span>Made with ❤ by Alberto Felix &amp; Aaron Mcgeo | CSE-A(I)</span>
+        </footer>
+    </div>
+
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>

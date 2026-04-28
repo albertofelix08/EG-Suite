@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Engineering Graphics Suite | Alberto Felix &amp; Aaron Mcgeo</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-app: #0f1117;
+            --bg-card: #151820;
+            --bg-card-hover: #1a1f2e;
+            --accent-primary: #2563eb;
+            --accent-secondary: #10b981;
+            --accent-unit3-4: #8b5cf6;
+            --accent-unit5: #2563eb;
+            --text-on-dark: #e5e7eb;
+            --text-muted: #6b7280;
+            --border-dark: #1f2937;
+            --font-mono: 'Space Mono', 'Courier New', monospace;
+            --font-body: 'DM Sans', system-ui, sans-serif;
+        }
+
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: var(--font-body);
+            background: var(--bg-app);
+            color: var(--text-on-dark);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 20px;
+            overflow-x: hidden;
+        }
+
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(37,99,235,0.05) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(37,99,235,0.05) 1px, transparent 1px);
+            background-size: 40px 40px;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .launcher-wrap {
+            position: relative;
+            z-index: 1;
+            width: 100%;
+            max-width: 900px;
+        }
+
+        .launcher-header {
+            text-align: center;
+            margin-bottom: 48px;
+        }
+
+        .logo-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            background: rgba(37,99,235,0.12);
+            border: 1px solid rgba(37,99,235,0.25);
+            border-radius: 100px;
+            padding: 8px 20px 8px 10px;
+            margin-bottom: 28px;
+        }
+
+        .logo-icon {
+            width: 32px;
+            height: 32px;
+            background: var(--accent-primary);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: var(--font-mono);
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .logo-text {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            font-weight: 700;
+            color: rgba(37,99,235,0.9);
+            letter-spacing: 0.08em;
+        }
+
+        .launcher-title {
+            font-family: var(--font-mono);
+            font-size: clamp(24px, 4vw, 38px);
+            font-weight: 700;
+            color: #f1f5f9;
+            letter-spacing: -0.02em;
+            line-height: 1.1;
+            margin-bottom: 12px;
+        }
+
+        .launcher-subtitle {
+            font-size: 15px;
+            color: var(--text-muted);
+            max-width: 480px;
+            margin: 0 auto;
+            line-height: 1.6;
+        }
+
+        .units-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 36px;
+        }
+
+        @media (max-width: 640px) {
+            .units-grid { grid-template-columns: 1fr; }
+        }
+
+        .unit-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-dark);
+            border-radius: 16px;
+            padding: 28px;
+            text-decoration: none;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            transition: all 0.2s ease;
+            position: relative;
+            overflow: hidden;
+            cursor: pointer;
+        }
+
+        .unit-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .unit-card-u34::before {
+            background: radial-gradient(ellipse at top left, rgba(139,92,246,0.12) 0%, transparent 65%);
+        }
+
+        .unit-card-u5::before {
+            background: radial-gradient(ellipse at top left, rgba(37,99,235,0.12) 0%, transparent 65%);
+        }
+
+        .unit-card:hover {
+            border-color: rgba(255,255,255,0.12);
+            transform: translateY(-3px);
+            box-shadow: 0 16px 40px rgba(0,0,0,0.4);
+        }
+
+        .unit-card:hover::before { opacity: 1; }
+
+        .unit-card-u34:hover { border-color: rgba(139,92,246,0.4); }
+        .unit-card-u5:hover { border-color: rgba(37,99,235,0.4); }
+
+        .card-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+        }
+
+        .unit-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            border-radius: 8px;
+            font-family: var(--font-mono);
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+        }
+
+        .badge-u34 {
+            background: rgba(139,92,246,0.15);
+            color: #a78bfa;
+            border: 1px solid rgba(139,92,246,0.25);
+        }
+
+        .badge-u5 {
+            background: rgba(37,99,235,0.15);
+            color: #60a5fa;
+            border: 1px solid rgba(37,99,235,0.25);
+        }
+
+        .card-arrow {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            transition: transform 0.2s;
+            border: 1px solid var(--border-dark);
+            color: var(--text-muted);
+        }
+
+        .unit-card:hover .card-arrow {
+            transform: translate(2px, -2px);
+        }
+
+        .unit-card-u34:hover .card-arrow { border-color: #a78bfa; color: #a78bfa; }
+        .unit-card-u5:hover .card-arrow { border-color: #60a5fa; color: #60a5fa; }
+
+        .card-visual {
+            font-size: 52px;
+            line-height: 1;
+            filter: drop-shadow(0 4px 12px rgba(0,0,0,0.4));
+            margin: 4px 0;
+        }
+
+        .card-title {
+            font-family: var(--font-mono);
+            font-size: 18px;
+            font-weight: 700;
+            color: #f1f5f9;
+            line-height: 1.2;
+        }
+
+        .card-desc {
+            font-size: 13px;
+            color: #9ca3af;
+            line-height: 1.55;
+        }
+
+        .card-features {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 4px;
+        }
+
+        .feature-tag {
+            padding: 3px 10px;
+            border-radius: 100px;
+            font-size: 10px;
+            font-family: var(--font-mono);
+            font-weight: 700;
+            letter-spacing: 0.03em;
+        }
+
+        .tag-u34 {
+            background: rgba(139,92,246,0.12);
+            color: #a78bfa;
+            border: 1px solid rgba(139,92,246,0.2);
+        }
+
+        .tag-u5 {
+            background: rgba(37,99,235,0.12);
+            color: #60a5fa;
+            border: 1px solid rgba(37,99,235,0.2);
+        }
+
+        .card-cta {
+            margin-top: 4px;
+            padding: 10px 18px;
+            border-radius: 10px;
+            font-family: var(--font-mono);
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-align: center;
+            transition: all 0.15s;
+            border: none;
+            cursor: pointer;
+            display: block;
+            text-decoration: none;
+        }
+
+        .cta-u34 {
+            background: #8b5cf6;
+            color: white;
+        }
+        .cta-u34:hover { background: #7c3aed; box-shadow: 0 6px 20px rgba(139,92,246,0.4); }
+
+        .cta-u5 {
+            background: #2563eb;
+            color: white;
+        }
+        .cta-u5:hover { background: #1d4ed8; box-shadow: 0 6px 20px rgba(37,99,235,0.4); }
+
+        .section-divider {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin: 32px 0 24px;
+            color: var(--text-muted);
+            font-family: var(--font-mono);
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 0.14em;
+        }
+        .section-divider::before, .section-divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--border-dark);
+        }
+
+        .info-row {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+        }
+
+        @media (max-width: 640px) {
+            .info-row { grid-template-columns: 1fr; }
+        }
+
+        .info-block {
+            background: var(--bg-card);
+            border: 1px solid var(--border-dark);
+            border-radius: 12px;
+            padding: 16px 18px;
+            text-align: center;
+        }
+
+        .info-block-icon {
+            font-size: 22px;
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        .info-block-title {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            font-weight: 700;
+            color: #e5e7eb;
+            margin-bottom: 4px;
+        }
+
+        .info-block-desc {
+            font-size: 11px;
+            color: var(--text-muted);
+            line-height: 1.5;
+        }
+
+        .launcher-footer {
+            margin-top: 40px;
+            text-align: center;
+            font-size: 11px;
+            color: var(--text-muted);
+            font-family: var(--font-mono);
+        }
+
+        .launcher-footer strong {
+            color: #e5e7eb;
+        }
+    </style>
+</head>
+<body>
+    <div class="launcher-wrap">
+
+        <div class="launcher-header">
+            <div class="logo-badge">
+                <div class="logo-icon">EG</div>
+                <span class="logo-text">ENGINEERING GRAPHICS SUITE</span>
+            </div>
+            <h1 class="launcher-title">Interactive 3D Learning<br>Platform</h1>
+            <p class="launcher-subtitle">A comprehensive engineering graphics simulator covering projection of solids, sections, development of surfaces, and isometric projections with real-time 3D visualization.</p>
+        </div>
+
+        <div class="units-grid">
+
+            <!-- Unit III & IV Card -->
+            <a href="unit3-4/index.html" class="unit-card unit-card-u34">
+                <div class="card-header">
+                    <span class="unit-badge badge-u34">UNIT III &amp; IV</span>
+                    <div class="card-arrow">↗</div>
+                </div>
+                <div class="card-visual">🧊</div>
+                <div>
+                    <div class="card-title">Projection of Solids &amp;<br>Section &amp; Development</div>
+                </div>
+                <div class="card-desc">
+                    Rotating object method for axis inclination, cutting planes with true shape of section, lateral surface development, and first-angle orthographic projections.
+                </div>
+                <div class="card-features">
+                    <span class="feature-tag tag-u34">Rotating Object</span>
+                    <span class="feature-tag tag-u34">True Shape</span>
+                    <span class="feature-tag tag-u34">Development</span>
+                    <span class="feature-tag tag-u34">First Angle</span>
+                    <span class="feature-tag tag-u34">4 Views</span>
+                </div>
+                <span class="card-cta cta-u34">Launch Unit III &amp; IV →</span>
+            </a>
+
+            <!-- Unit V Card -->
+            <a href="unit5/index.html" class="unit-card unit-card-u5">
+                <div class="card-header">
+                    <span class="unit-badge badge-u5">UNIT V</span>
+                    <div class="card-arrow">↗</div>
+                </div>
+                <div class="card-visual">📐</div>
+                <div>
+                    <div class="card-title">Isometric Projections &amp;<br>Orthographic Views</div>
+                </div>
+                <div class="card-desc">
+                    Isometric and orthographic 3D visualization with split 4-view layout, construction lines, dimension annotations, and PNG export.
+                </div>
+                <div class="card-features">
+                    <span class="feature-tag tag-u5">Split View</span>
+                    <span class="feature-tag tag-u5">6 Solid Types</span>
+                    <span class="feature-tag tag-u5">Cut Geometry</span>
+                    <span class="feature-tag tag-u5">Annotations</span>
+                    <span class="feature-tag tag-u5">Export PNG</span>
+                </div>
+                <span class="card-cta cta-u5">Launch Unit V →</span>
+            </a>
+
+        </div>
+
+        <div class="section-divider">PLATFORM FEATURES</div>
+
+        <div class="info-row">
+            <div class="info-block">
+                <span class="info-block-icon">🔬</span>
+                <div class="info-block-title">REAL-TIME 3D</div>
+                <div class="info-block-desc">WebGL-powered Three.js renderer with interactive camera controls and live geometry updates</div>
+            </div>
+            <div class="info-block">
+                <span class="info-block-icon">📏</span>
+                <div class="info-block-title">SYLLABUS ALIGNED</div>
+                <div class="info-block-desc">Covers ME22201: rotating object method, first-angle projection, true shape, and development of surfaces</div>
+            </div>
+            <div class="info-block">
+                <span class="info-block-icon">📴</span>
+                <div class="info-block-title">WORKS OFFLINE</div>
+                <div class="info-block-desc">Zero external dependencies at runtime. All Three.js libraries are bundled locally</div>
+            </div>
+        </div>
+
+        <div class="launcher-footer">
+            Built by <strong>Alberto Felix &amp; Aaron Mcgeo</strong> &nbsp;|&nbsp; CSE-A(I) &nbsp;|&nbsp; Engineering Graphics
+        </div>
+
+    </div>
+</body>
+</html>

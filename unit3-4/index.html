@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Unit III & IV — Projection & Section of Solids | Engineering Graphics</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "../common/three.module.js",
+                "three/addons/": "../common/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div class="app-container">
+
+        <!-- ===== HEADER ===== -->
+        <header class="header">
+            <div class="header-left">
+                <a href="../index.html" class="back-btn" title="Back to Suite Launcher">← Suite</a>
+                <div class="logo-mark">III·IV</div>
+                <div class="title-block">
+                    <h1>Engineering Graphics Simulator</h1>
+                    <span class="subtitle">Unit III &amp; IV — Projection of Solids, Section &amp; Development</span>
+                </div>
+            </div>
+
+            <!-- Tab Switcher -->
+            <div class="header-center">
+                <div class="tab-switcher">
+                    <button class="tab-btn active" data-tab="tab3d">
+                        <span class="tab-icon">🧊</span> 3D View
+                    </button>
+                    <button class="tab-btn" data-tab="tabTrueShape">
+                        <span class="tab-icon">📐</span> True Shape
+                    </button>
+                    <button class="tab-btn" data-tab="tabDev">
+                        <span class="tab-icon">📜</span> Development
+                    </button>
+                    <button class="tab-btn" data-tab="tabProj">
+                        <span class="tab-icon">📏</span> Projection
+                    </button>
+                </div>
+            </div>
+
+            <div class="header-right">
+                <button class="export-btn" id="exportBtn" title="Export view as PNG">↓ Export PNG</button>
+                <button class="about-btn" id="aboutBtn" title="About this project">👥 About</button>
+                <div class="credits-block">
+                    <span class="credits-names">Alberto Felix &amp; Aaron Mcgeo</span>
+                    <span class="credits-class">CSE-A(I)</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- ===== MAIN LAYOUT ===== -->
+        <div class="main-layout">
+
+            <!-- ===== SIDEBAR ===== -->
+            <aside class="sidebar" id="sidebar">
+
+                <!-- ══════ TIER 1: ESSENTIAL (always open) ══════ -->
+
+                <!-- Solid Type & Dimensions -->
+                <div class="panel-section">
+                    <div class="section-label">🧊 SOLID</div>
+                    <select id="solidType" class="select-input">
+                        <optgroup label="Prisms">
+                            <option value="hexPrism" selected>Hexagonal Prism</option>
+                            <option value="pentPrism">Pentagonal Prism</option>
+                            <option value="cylinder">Cylinder</option>
+                            <option value="cube">Cube</option>
+                            <option value="cuboid">Cuboid</option>
+                        </optgroup>
+                        <optgroup label="Pyramids">
+                            <option value="hexPyramid">Hexagonal Pyramid</option>
+                            <option value="pentPyramid">Pentagonal Pyramid</option>
+                            <option value="cone">Cone</option>
+                        </optgroup>
+                    </select>
+
+                    <div class="dim-row">
+                        <label class="dim-label-text" id="lblBase">Base Size <span class="unit">mm</span></label>
+                        <div class="dim-control">
+                            <input type="range" id="solidR" min="5" max="100" value="30" step="1">
+                            <input type="number" id="solidRVal" value="30" min="5" max="100" step="1">
+                        </div>
+                    </div>
+
+                    <div class="dim-row">
+                        <label class="dim-label-text">Height <span class="unit">mm</span></label>
+                        <div class="dim-control">
+                            <input type="range" id="solidH" min="10" max="150" value="60" step="1">
+                            <input type="number" id="solidHVal" value="60" min="10" max="150" step="1">
+                        </div>
+                    </div>
+
+                    <div class="dim-row" id="cuboidExtra" style="display:none">
+                        <label class="dim-label-text">Depth <span class="unit">mm</span></label>
+                        <div class="dim-control">
+                            <input type="range" id="solidD" min="5" max="100" value="30" step="1">
+                            <input type="number" id="solidDVal" value="30" min="5" max="100" step="1">
+                        </div>
+                    </div>
+
+                    <button class="btn btn-primary" id="generateBtn">⚙ Generate Solid</button>
+                </div>
+
+                <!-- Resting Position -->
+                <div class="panel-section">
+                    <div class="section-label">📍 RESTING POSITION</div>
+                    <div class="radio-row">
+                        <label class="radio-pill">
+                            <input type="radio" name="restPos" value="HP" checked> On HP
+                        </label>
+                        <label class="radio-pill">
+                            <input type="radio" name="restPos" value="VP"> On VP
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Cutting Plane -->
+                <div class="panel-section">
+                    <div class="section-label">✂ CUTTING PLANE</div>
+                    <div class="dim-row">
+                        <label class="dim-label-text">Angle θ <span class="unit">°</span></label>
+                        <div class="dim-control">
+                            <input type="range" id="cutAngle" min="0" max="90" value="45" step="1">
+                            <input type="number" id="cutAngleVal" value="45" min="0" max="90" step="1">
+                        </div>
+                    </div>
+                    <div class="dim-row">
+                        <label class="dim-label-text">Position <span class="unit">mm from base</span></label>
+                        <div class="dim-control">
+                            <input type="range" id="cutPos" min="0" max="120" value="40" step="1">
+                            <input type="number" id="cutPosVal" value="40" min="0" max="120" step="1">
+                        </div>
+                    </div>
+                    <div class="toggle-row">
+                        <label class="toggle-label" for="showCutPreview">Show cutting plane preview</label>
+                        <label class="toggle">
+                            <input type="checkbox" id="showCutPreview" checked>
+                            <span class="toggle-track"></span>
+                        </label>
+                    </div>
+                    <button class="btn btn-primary" id="applyCutBtn">✂ Apply Cut</button>
+                    <button class="btn btn-ghost" id="restoreCutBtn" style="display:none">↩ Restore Solid</button>
+                </div>
+
+                <!-- Quick Views -->
+                <div class="panel-section">
+                    <div class="section-label">👁 QUICK VIEWS</div>
+                    <div class="quick-view-grid">
+                        <button class="qv-btn" id="viewIsoBtn">Isometric</button>
+                        <button class="qv-btn" id="viewFrontBtn">Front</button>
+                        <button class="qv-btn" id="viewTopBtn">Plan</button>
+                        <button class="qv-btn" id="viewSideBtn">Side</button>
+                    </div>
+                    <button class="btn btn-ghost" id="resetViewBtn" style="margin-top:6px">⟳ Reset View</button>
+                </div>
+
+                <!-- Display Toggles -->
+                <div class="panel-section">
+                    <div class="section-label">👁 DISPLAY</div>
+                    <div class="toggle-row">
+                        <label class="toggle-label" for="showGridToggle">Show Grid</label>
+                        <label class="toggle"><input type="checkbox" id="showGridToggle" checked><span class="toggle-track"></span></label>
+                    </div>
+                    <div class="toggle-row">
+                        <label class="toggle-label" for="showAxesToggle">Show Axes</label>
+                        <label class="toggle"><input type="checkbox" id="showAxesToggle" checked><span class="toggle-track"></span></label>
+                    </div>
+                    <div class="toggle-row">
+                        <label class="toggle-label" for="opaqueModeToggle">Opaque Mode</label>
+                        <label class="toggle"><input type="checkbox" id="opaqueModeToggle"><span class="toggle-track"></span></label>
+                    </div>
+                </div>
+
+                <!-- ══════ TIER 2: ADVANCED (collapsed by default) ══════ -->
+
+                <!-- Axis Orientation -->
+                <div class="panel-section collapsible">
+                    <div class="section-label collapse-trigger" data-target="axisAdvanced">
+                        ⚙ AXIS ORIENTATION <span class="collapse-arrow">▸</span>
+                    </div>
+                    <div class="collapse-content" id="axisAdvanced" style="display:none">
+                        <div class="dim-row">
+                            <label class="dim-label-text">∠ with HP <span class="unit">°</span></label>
+                            <div class="dim-control">
+                                <input type="range" id="incHP" min="0" max="90" value="90" step="1">
+                                <input type="number" id="incHPVal" value="90" min="0" max="90" step="1">
+                            </div>
+                        </div>
+                        <div class="dim-row">
+                            <label class="dim-label-text">∠ with VP <span class="unit">°</span></label>
+                            <div class="dim-control">
+                                <input type="range" id="incVP" min="0" max="90" value="90" step="1">
+                                <input type="number" id="incVPVal" value="90" min="0" max="90" step="1">
+                            </div>
+                        </div>
+                        <div class="toggle-row">
+                            <label class="toggle-label" for="perpEdgeCB">Edge ⊥ HP</label>
+                            <label class="toggle"><input type="checkbox" id="perpEdgeCB"><span class="toggle-track"></span></label>
+                        </div>
+                        <select id="perpEdgeSel" disabled class="select-input">
+                            <option value="0">Edge 1</option>
+                        </select>
+                        <div class="ctrl-note">Free Rotation (clamped ±90°)</div>
+                        <div class="dim-row">
+                            <label class="dim-label-text">Rot X <span class="unit">°</span></label>
+                            <div class="dim-control">
+                                <input type="range" id="rotX" min="-90" max="90" value="0" step="1">
+                                <input type="number" id="rotXVal" value="0" min="-90" max="90" step="1">
+                            </div>
+                        </div>
+                        <div class="dim-row">
+                            <label class="dim-label-text">Rot Y <span class="unit">°</span></label>
+                            <div class="dim-control">
+                                <input type="range" id="rotY" min="-180" max="180" value="0" step="1">
+                                <input type="number" id="rotYVal" value="0" min="-180" max="180" step="1">
+                            </div>
+                        </div>
+                        <div class="dim-row">
+                            <label class="dim-label-text">Rot Z <span class="unit">°</span></label>
+                            <div class="dim-control">
+                                <input type="range" id="rotZ" min="-90" max="90" value="0" step="1">
+                                <input type="number" id="rotZVal" value="0" min="-90" max="90" step="1">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Reference Planes -->
+                <div class="panel-section collapsible">
+                    <div class="section-label collapse-trigger" data-target="planesAdvanced">
+                        📋 REFERENCE PLANES <span class="collapse-arrow">▸</span>
+                    </div>
+                    <div class="collapse-content" id="planesAdvanced" style="display:none">
+                        <!-- HP -->
+                        <div class="plane-block hp">
+                            <div class="plane-block-title">
+                                <span>▰ HP — Horizontal</span>
+                                <label class="mini-toggle">
+                                    <input type="checkbox" id="hpVisibleCB" checked>
+                                    <span>Show</span>
+                                </label>
+                            </div>
+                            <div class="plane-mode-row">
+                                <label class="plane-mode-pill">
+                                    <input type="radio" name="hpMode" value="trans" checked> Trans
+                                </label>
+                                <label class="plane-mode-pill">
+                                    <input type="radio" name="hpMode" value="solid"> Solid
+                                </label>
+                                <label class="plane-mode-pill">
+                                    <input type="radio" name="hpMode" value="hide"> Hide
+                                </label>
+                            </div>
+                        </div>
+                        <!-- VP -->
+                        <div class="plane-block vp">
+                            <div class="plane-block-title">
+                                <span>▰ VP — Vertical</span>
+                                <label class="mini-toggle">
+                                    <input type="checkbox" id="vpVisibleCB" checked>
+                                    <span>Show</span>
+                                </label>
+                            </div>
+                            <div class="plane-mode-row">
+                                <label class="plane-mode-pill">
+                                    <input type="radio" name="vpMode" value="trans" checked> Trans
+                                </label>
+                                <label class="plane-mode-pill">
+                                    <input type="radio" name="vpMode" value="solid"> Solid
+                                </label>
+                                <label class="plane-mode-pill">
+                                    <input type="radio" name="vpMode" value="hide"> Hide
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quick Load -->
+                <div class="panel-section collapsible">
+                    <div class="section-label collapse-trigger" data-target="quickLoadAdvanced">
+                        ⚡ QUICK LOAD <span class="collapse-arrow">▸</span>
+                    </div>
+                    <div class="collapse-content" id="quickLoadAdvanced" style="display:none">
+                        <div class="quick-btns-grid">
+                            <button class="quick-load-btn" data-solid="hexPrism">Hex Prism</button>
+                            <button class="quick-load-btn" data-solid="pentPyramid">Pent Pyramid</button>
+                            <button class="quick-load-btn" data-solid="cone">Cone</button>
+                            <button class="quick-load-btn" data-solid="cylinder">Cylinder</button>
+                            <button class="quick-load-btn" data-solid="cube">Cube</button>
+                            <button class="quick-load-btn" data-solid="cuboid">Cuboid</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Legend -->
+                <div class="panel-section">
+                    <div class="section-label">🎨 LEGEND</div>
+                    <div class="legend-list">
+                        <div class="legend-item"><span class="legend-dot" style="background:#3b82f6"></span>HP — Horizontal Plane</div>
+                        <div class="legend-item"><span class="legend-dot" style="background:#10b981"></span>VP — Vertical Plane</div>
+                        <div class="legend-item"><span class="legend-dot" style="background:#f97316"></span>Solid</div>
+                        <div class="legend-item"><span class="legend-dot" style="background:#a855f7"></span>Cutting Plane</div>
+                        <div class="legend-item"><span class="legend-dot" style="background:#ef4444"></span>Cut Section</div>
+                    </div>
+                </div>
+
+            </aside>
+
+            <!-- ===== CONTENT AREA ===== -->
+            <div class="content-area">
+
+                <!-- 3D View Tab -->
+                <div class="tab-content active" id="tab3d">
+                    <div class="viewport-wrap" id="threeContainer"></div>
+                    <div class="viewport-overlay">
+                        <div class="info-chip" id="infoSolidType">Hexagonal Prism</div>
+                        <div class="info-chip" id="infoDims">30mm × 60mm</div>
+                    </div>
+                    <div class="controls-hint">Drag: Rotate &nbsp;|&nbsp; Scroll: Zoom &nbsp;|&nbsp; Shift: Pan</div>
+                </div>
+
+                <!-- True Shape Tab -->
+                <div class="tab-content" id="tabTrueShape">
+                    <div class="canvas2d-wrap">
+                        <canvas id="canvasTrueShape"></canvas>
+                    </div>
+                </div>
+
+                <!-- Development Tab -->
+                <div class="tab-content" id="tabDev">
+                    <div class="dev-toolbar">
+                        <span class="dev-label">Mode:</span>
+                        <label class="dev-radio">
+                            <input type="radio" name="devMode" value="full" checked> Full Solid
+                        </label>
+                        <label class="dev-radio">
+                            <input type="radio" name="devMode" value="sectioned"> Sectioned
+                        </label>
+                        <button class="dev-unroll-btn" id="unrollBtn">▶ Unroll</button>
+                    </div>
+                    <div class="canvas2d-wrap">
+                        <canvas id="canvasDev"></canvas>
+                    </div>
+                </div>
+
+                                <!-- Projection Tab -->
+                <div class="tab-content" id="tabProj">
+                    <div class="dev-toolbar">
+                        <span class="dev-label">View:</span>
+                        <label class="dev-radio">
+                            <input type="radio" name="projMode" value="full" checked> Full Solid
+                        </label>
+                        <label class="dev-radio">
+                            <input type="radio" name="projMode" value="sectioned"> Sectioned
+                        </label>
+                        <span style="flex:1"></span>
+                        <span class="dev-label" id="projCutInfo" style="display:none;color:#ef4444;font-size:10px">✂ Cut applied</span>
+                    </div>
+                    <div class="canvas2d-wrap">
+                        <canvas id="canvasProj"></canvas>
+                    </div>
+                </div>
+
+            </div>
+
+        </div>
+
+        <!-- ===== FOOTER ===== -->
+        <footer class="footer">
+            <div class="footer-left">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="statusText">Ready — Generate a solid to begin</span>
+            </div>
+            <div class="footer-right">
+                <span>Unit III &amp; IV: Projection of Solids, Section &amp; Development</span>
+                <span class="footer-sep">|</span>
+                <span>CO3 · CO4: Projection &amp; Section Principles</span>
+            </div>
+        </footer>
+
+    </div>
+
+    <!-- ===== ABOUT MODAL ===== -->
+    <div class="modal-overlay" id="aboutModal">
+        <div class="modal">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <div class="modal-title-icon">⬡</div>
+                    <div>
+                        <div class="modal-title-main">About EG-Visualizer</div>
+                        <div class="modal-title-sub">Engineering Graphics · CSE-A</div>
+                    </div>
+                </div>
+                <button class="modal-close" id="modalCloseBtn">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="modal-intro">
+                    A <strong>3D Engineering Graphics visualizer</strong> for understanding projection of solids, section planes, surface development, and orthographic projections. Built as a course project for the <strong>Engineering Graphics (ME22201)</strong> curriculum.
+                </div>
+                <div class="modal-divider"></div>
+                <div class="member-cards">
+                    <div class="member-card professor">
+                        <div class="member-avatar prof">DA</div>
+                        <div class="member-info">
+                            <div class="member-name">Dr. Anjan Augustine</div>
+                            <div class="member-role prof-role">Faculty Guide &amp; Mentor</div>
+                            <div class="member-dept">Department of Mechanical Engineering · Course Instructor</div>
+                        </div>
+                    </div>
+                    <div class="member-card">
+                        <div class="member-avatar s1">AM</div>
+                        <div class="member-info">
+                            <div class="member-name">Aaron Mcgeo</div>
+                            <div class="member-role student-role">Developer &amp; Co-Author</div>
+                            <div class="member-dept">B.E CSE · Batch 2029 · CSE-A</div>
+                        </div>
+                    </div>
+                    <div class="member-card">
+                        <div class="member-avatar s2">AF</div>
+                        <div class="member-info">
+                            <div class="member-name">Alberto Felix</div>
+                            <div class="member-role student-role">Developer &amp; Co-Author</div>
+                            <div class="member-dept">B.E CSE · Batch 2029 · CSE-A</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-project">
+                    <div class="modal-project-title">⚙ Project Details</div>
+                    <div class="modal-project-grid">
+                        <div class="mpg-item"><strong>Version</strong>v1.0</div>
+                        <div class="mpg-item"><strong>Engine</strong>Three.js (local)</div>
+                        <div class="mpg-item"><strong>Course</strong>ME22201</div>
+                        <div class="mpg-item"><strong>Units</strong>III &amp; IV</div>
+                        <div class="mpg-item"><strong>Solids</strong>8 types</div>
+                        <div class="mpg-item"><strong>Views</strong>3D · True Shape · Dev · Proj</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>
