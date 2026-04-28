@@ -74,6 +74,7 @@ export function computeSectionPoints(state) {
 
     const tR = (state.cutAngle * Math.PI) / 180;
     const tanT = Math.tan(tR);
+    const slope = tanT; 
     const posArr = state.solidGeo.getAttribute('position').array;
     const idxArr = state.solidGeo.getIndex().array;
     const onVP = !state.restOnHP;
@@ -172,6 +173,7 @@ export function applyCutVisual(state) {
 
     const tR = (state.cutAngle * Math.PI) / 180;
     const tanT = Math.tan(tR);
+    const slope = tanT;
     const posArr = state.solidGeo.getAttribute('position').array;
     const idxArr = state.solidGeo.getIndex().array;
     const onVP = !state.restOnHP;
