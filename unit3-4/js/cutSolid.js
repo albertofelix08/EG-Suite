@@ -88,9 +88,9 @@ function clipTriangle(verts, outIdx, tri, vals, keepBelow) {
 // ═══════════════════════════════════════════════════════════════════
 
 function getLocalCuttingPlane(state) {
-    const tR  = (state.cutAngle * Math.PI) / 180;
+    const tR  = -(state.cutAngle * Math.PI) / 180;  // negate to match preview
     const tanT = Math.tan(tR);
-    const normal = new THREE.Vector3(0, 1, tanT).normalize();
+    const normal = new THREE.Vector3(tanT, 1, 0).normalize();
     const point  = new THREE.Vector3(0, state.cutPos, 0);
     return new THREE.Plane().setFromNormalAndCoplanarPoint(normal, point);
 }
@@ -159,8 +159,8 @@ export function computeSectionPoints(state) {
     const cosT = Math.cos(tR), sinT = Math.sin(tR);
     const projected = uniq.map(p => ({
         pt: [p.x, p.y, p.z],
-        u:  p.x,
-        v: -p.z * cosT + (p.y - state.cutPos) * sinT,
+        u:  p.z,
+        v: -p.x * cosT + (p.y - state.cutPos) * sinT,
     }));
     const cu = projected.reduce((s, p) => s + p.u, 0) / projected.length;
     const cv = projected.reduce((s, p) => s + p.v, 0) / projected.length;
@@ -209,8 +209,8 @@ export function applyCutVisual(state) {
     for (let i = 0; i < idxArr.length; i += 3) {
         const tri  = [idxArr[i], idxArr[i + 1], idxArr[i + 2]];
         const vals = tri.map(k => {
-            tmpV.set(verts[k][0], verts[k][1], verts[k][2]);
-            return localPlane.distanceToPoint(tmpV);
+        tmpV.set(verts[k][0], verts[k][1], verts[k][2]);
+        return localPlane.distanceToPoint(tmpV);
         });
         clipTriangle(verts, clippedIdx, tri, vals, true);
     }

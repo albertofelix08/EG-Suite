@@ -73,7 +73,9 @@ export function createCuttingPlane(state) {
     // by cutAngle around the local X-axis.
     //   Step 1: rotate -90° around X  →  plane faces up (+Y normal)
     //   Step 2: rotate by +angleRad around X  →  tilt from horizontal
-    plane.rotation.x = -Math.PI / 2 + angleRad;
+    plane.rotation.order = 'ZXY';  // Z first (tilt left/right), then X (lay flat)
+    plane.rotation.x = -Math.PI / 2;  // lay flat on HP
+    plane.rotation.z = angleRad;      // tilt around Zplane.rotation.z = angleRad;
 
     // Position at local Y = cutPos (the "height" along the solid's axis)
     plane.position.set(0, state.cutPos, 0);
