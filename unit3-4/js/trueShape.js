@@ -15,64 +15,115 @@
  *   - Vertex labels with leader lines
  *   - Dimension arrows (width & height)
  *
- * FIX v4: The 2D projection axes are now:
- *   u = x   (world X — the axis that does NOT change with cut tilt)
- *   v = −z·cosθ + (y − cutPos)·sinθ   (in-plane component along slope)
+ * FIX v5:
+ *   BUG 1.1 — Use _localSectionPts instead of sectionPts.
+ *             sectionPts are world-space (masterGroup transform already applied).
+ *             drawTrueShape() re-applies the cut-angle formula on top of those,
+ *             causing a double-rotation for VP mode or any axisRot != 0.
+ *             Local space is the canonical frame the formula was designed for.
  *
- * This matches the angular sort axes in cutSolid.js so the vertex
- * ordering from computeSectionPoints() maps directly and correctly
- * onto the canvas without self-intersecting edges on oblique cuts.
+ *   BUG 1.2 — Paper noise texture was regenerated with Math.random() on every
+ *             single render call (including every resize), causing visible flicker.
+ *             Now pre-generated once on an offscreen canvas and cached.
+ *
+ *   BUG 1.3 — Dimension arrows were placed at bBot+28 / bL−28 with no bounds
+ *             check, clipping outside the paper border for large shapes or small
+ *             canvas panels. Now clamped inside drawArea.
+ *
+ *   BUG 1.4 — Vertex leader lines radiated from the canvas center origin, not
+ *             from the polygon centroid — caused stacking/crossing on concave
+ *             cuts. Now computed from the polygon's own centroid.
+ *
+ *   BUG 1.6 — Added inline "Apply Cut" button when no section is present, so
+ *             the user doesn't have to switch back to the 3D tab.
+ *
+ *   BUG 1.7 — Title block now shows solidD for cuboids ("D=Xmm" appended).
  */
+
+import { solidName } from './solids.js';
+
+// ═══════════════════════════════════════════════════════════════════
+// NOISE TEXTURE CACHE  (fixes flicker — generated once, reused)
+// ═══════════════════════════════════════════════════════════════════
+
+let _noiseCanvas = null;
+
+function getNoiseCanvas(w, h) {
+    // Re-generate only if size changes materially (>4px difference)
+    if (
+        _noiseCanvas &&
+        Math.abs(_noiseCanvas.width - w) <= 4 &&
+        Math.abs(_noiseCanvas.height - h) <= 4
+    ) {
+        return _noiseCanvas;
+    }
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = 'rgba(180,160,120,0.05)';
+    for (let i = 0; i < 1500; i++) {
+        ctx.fillRect(Math.random() * w, Math.random() * h, 1, 1);
+    }
+    _noiseCanvas = c;
+    return c;
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // DRAWING HELPERS
 // ═══════════════════════════════════════════════════════════════════
 
-function drawDimArrow(ctx, ax, ay, bx, by, label, isVert) {
+function drawDimArrow(ctx, ax, ay, bx, by, label, isVert, drawArea) {
     const arrowSize = 6;
     ctx.strokeStyle = '#1a1a2e';
     ctx.lineWidth = 0.9;
     ctx.setLineDash([]);
 
+    // Clamp offset positions to stay inside the drawArea
+    const daRight  = drawArea.x + drawArea.w;
+    const daBottom = drawArea.y + drawArea.h;
+
     if (!isVert) {
-        // Horizontal dimension
-        ctx.beginPath(); ctx.moveTo(ax, ay - 4); ctx.lineTo(ax, ay + 12); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(bx, ay - 4); ctx.lineTo(bx, ay + 12); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(ax, ay + 6); ctx.lineTo(bx, ay + 6); ctx.stroke();
+        // Horizontal dimension — placed below the shape
+        const dimY = Math.min(ay + 28, daBottom - 8);
+        ctx.beginPath(); ctx.moveTo(ax, dimY - 8); ctx.lineTo(ax, dimY + 8); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(bx, dimY - 8); ctx.lineTo(bx, dimY + 8); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(ax, dimY); ctx.lineTo(bx, dimY); ctx.stroke();
         // Left arrowhead
-        ctx.beginPath(); ctx.moveTo(ax, ay + 6);
-        ctx.lineTo(ax + arrowSize, ay + 6 - arrowSize / 2);
-        ctx.lineTo(ax + arrowSize, ay + 6 + arrowSize / 2);
+        ctx.beginPath(); ctx.moveTo(ax, dimY);
+        ctx.lineTo(ax + arrowSize, dimY - arrowSize / 2);
+        ctx.lineTo(ax + arrowSize, dimY + arrowSize / 2);
         ctx.closePath(); ctx.fillStyle = '#1a1a2e'; ctx.fill();
         // Right arrowhead
-        ctx.beginPath(); ctx.moveTo(bx, ay + 6);
-        ctx.lineTo(bx - arrowSize, ay + 6 - arrowSize / 2);
-        ctx.lineTo(bx - arrowSize, ay + 6 + arrowSize / 2);
+        ctx.beginPath(); ctx.moveTo(bx, dimY);
+        ctx.lineTo(bx - arrowSize, dimY - arrowSize / 2);
+        ctx.lineTo(bx - arrowSize, dimY + arrowSize / 2);
         ctx.closePath(); ctx.fill();
         // Label
         ctx.fillStyle = '#1a1a2e';
         ctx.font = '9px "Courier New",monospace';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
-        ctx.fillText(label, (ax + bx) / 2, ay + 10);
+        ctx.fillText(label, (ax + bx) / 2, dimY + 4);
     } else {
-        // Vertical dimension
-        ctx.beginPath(); ctx.moveTo(bx - 4, ay); ctx.lineTo(bx + 12, ay); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(bx - 4, by); ctx.lineTo(bx + 12, by); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(bx + 6, ay); ctx.lineTo(bx + 6, by); ctx.stroke();
+        // Vertical dimension — placed to the left of the shape
+        const dimX = Math.max(ax - 28, drawArea.x + 8);
+        ctx.beginPath(); ctx.moveTo(dimX - 8, ay); ctx.lineTo(dimX + 8, ay); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(dimX - 8, by); ctx.lineTo(dimX + 8, by); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(dimX, ay); ctx.lineTo(dimX, by); ctx.stroke();
         // Top arrowhead
-        ctx.beginPath(); ctx.moveTo(bx + 6, ay);
-        ctx.lineTo(bx + 6 - arrowSize / 2, ay + arrowSize);
-        ctx.lineTo(bx + 6 + arrowSize / 2, ay + arrowSize);
+        ctx.beginPath(); ctx.moveTo(dimX, ay);
+        ctx.lineTo(dimX - arrowSize / 2, ay + arrowSize);
+        ctx.lineTo(dimX + arrowSize / 2, ay + arrowSize);
         ctx.closePath(); ctx.fillStyle = '#1a1a2e'; ctx.fill();
         // Bottom arrowhead
-        ctx.beginPath(); ctx.moveTo(bx + 6, by);
-        ctx.lineTo(bx + 6 - arrowSize / 2, by - arrowSize);
-        ctx.lineTo(bx + 6 + arrowSize / 2, by - arrowSize);
+        ctx.beginPath(); ctx.moveTo(dimX, by);
+        ctx.lineTo(dimX - arrowSize / 2, by - arrowSize);
+        ctx.lineTo(dimX + arrowSize / 2, by - arrowSize);
         ctx.closePath(); ctx.fill();
         // Label (rotated)
         ctx.save();
-        ctx.translate(bx + 18, (ay + by) / 2);
+        ctx.translate(dimX - 10, (ay + by) / 2);
         ctx.rotate(-Math.PI / 2);
         ctx.fillStyle = '#1a1a2e';
         ctx.font = '9px "Courier New",monospace';
@@ -85,13 +136,12 @@ function drawDimArrow(ctx, ax, ay, bx, by, label, isVert) {
 }
 
 function drawPaperSheet(ctx, cw, ch, col1Frac, col2Frac, cols) {
-    // Paper background with subtle noise
+    // Paper background
     ctx.fillStyle = '#f5f0e8';
     ctx.fillRect(0, 0, cw, ch);
-    ctx.fillStyle = 'rgba(180,160,120,0.05)';
-    for (let i = 0; i < 1500; i++) {
-        ctx.fillRect(Math.random() * cw, Math.random() * ch, 1, 1);
-    }
+
+    // Cached noise texture (no flicker on resize)
+    ctx.drawImage(getNoiseCanvas(cw, ch), 0, 0);
 
     // Outer border
     ctx.strokeStyle = '#1a1a2e';
@@ -140,17 +190,53 @@ function drawPaperSheet(ctx, cw, ch, col1Frac, col2Frac, cols) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// SOLID NAME HELPER
+// INLINE "APPLY CUT" BUTTON  (fixes bug 1.6)
+// Registers a one-time click handler on the canvas element.
 // ═══════════════════════════════════════════════════════════════════
 
-function solidName(type) {
-    const map = {
-        hexPrism: 'Hexagonal Prism', pentPrism: 'Pentagonal Prism',
-        cylinder: 'Cylinder', cube: 'Cube', cuboid: 'Cuboid',
-        hexPyramid: 'Hexagonal Pyramid', pentPyramid: 'Pentagonal Pyramid',
-        cone: 'Cone',
-    };
-    return map[type] || type;
+let _ctaBound = false;
+
+function drawApplyCutCTA(ctx, canvas, cw, ch, tbH) {
+    const btnW = 160, btnH = 32;
+    const btnX = (cw - btnW) / 2;
+    const btnY = (ch - tbH) / 2 + 10;
+
+    // Draw placeholder message
+    ctx.fillStyle = '#888';
+    ctx.font = 'italic 14px "Courier New",monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('No section — apply a cut first', cw / 2, (ch - tbH) / 2 - 10);
+
+    // Draw button
+    ctx.fillStyle = '#1a1a2e';
+    ctx.beginPath();
+    ctx.roundRect(btnX, btnY, btnW, btnH, 6);
+    ctx.fill();
+    ctx.fillStyle = '#f5f0e8';
+    ctx.font = 'bold 11px "Courier New",monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('✂  Apply Cut', btnX + btnW / 2, btnY + btnH / 2);
+    ctx.textBaseline = 'alphabetic';
+
+    // Wire up click only once per canvas lifetime
+    if (!_ctaBound) {
+        _ctaBound = true;
+        canvas.addEventListener('click', function handleClick(e) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const cx = (e.clientX - rect.left) * scaleX;
+            const cy = (e.clientY - rect.top)  * scaleY;
+            if (cx >= btnX && cx <= btnX + btnW && cy >= btnY && cy <= btnY + btnH) {
+                // Trigger the main applyCutBtn if it exists
+                const applyBtn = document.getElementById('applyCutBtn');
+                if (applyBtn) applyBtn.click();
+                canvas.removeEventListener('click', handleClick);
+                _ctaBound = false;
+            }
+        });
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -171,11 +257,18 @@ export function drawTrueShape(state) {
     const ctx = canvas.getContext('2d');
     const cw = canvas.width, ch = canvas.height;
 
+    // ── Build dimension line for title block ──
+    // Show W×D×H for cuboids so solidD appears (fixes bug 1.7)
+    const isCuboid = state.solidType === 'cuboid';
+    const dimLine = isCuboid
+        ? `W=${state.solidR}mm  D=${state.solidD}mm  H=${state.solidH}mm`
+        : `H=${state.solidH}mm  R=${state.solidR}mm`;
+
     // ── Paper sheet + title block ──
     const { tbY, tbH } = drawPaperSheet(ctx, cw, ch, 0.45, 0.70, [
         {
             title: 'TRUE SHAPE OF SECTION',
-            lines: [solidName(state.solidType).toUpperCase(), `H=${state.solidH}mm  R=${state.solidR}mm`]
+            lines: [solidName(state.solidType).toUpperCase(), dimLine]
         },
         {
             title: 'CUT PARAMETERS',
@@ -183,7 +276,7 @@ export function drawTrueShape(state) {
         },
         {
             title: 'EG-VISUALIZER',
-            lines: ['Engineering Graphics', `Vertices: ${state.sectionPts ? state.sectionPts.length : 0}`]
+            lines: ['Engineering Graphics', `Vertices: ${state._localSectionPts ? state._localSectionPts.length : 0}`]
         }
     ]);
 
@@ -199,31 +292,33 @@ export function drawTrueShape(state) {
         cw / 2, 64
     );
 
-    // ── No section fallback ──
-    if (!state.sectionPts || state.sectionPts.length < 3) {
-        ctx.fillStyle = '#888';
-        ctx.font = 'italic 14px "Courier New",monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText('No section — apply a cut first', cw / 2, (ch - tbH) / 2);
+    // ── No section fallback with inline CTA button ──
+    // FIX 1.1: use _localSectionPts (local space) not sectionPts (world space)
+    const localPts = state._localSectionPts;
+    if (!localPts || localPts.length < 3) {
+        drawApplyCutCTA(ctx, canvas, cw, ch, tbH);
         return;
     }
 
-    // ── Rabatment: project 3D section points onto cutting plane 2D ──
+    // ── Rabatment: project LOCAL-SPACE section points onto cutting plane 2D ──
     //
-    // The cutting plane's local frame is:
-    //   u-axis: world X  (lies in the plane, perpendicular to both the
-    //           tilt axis and the plane normal — purely horizontal)
+    // FIX 1.1: Previously used state.sectionPts (world space after masterGroup
+    // transform). That was wrong because drawTrueShape then re-applies the
+    // cut-angle formula on those already-rotated coordinates, double-rotating
+    // the shape for VP mode and any non-zero axisRot.
+    //
+    // Using _localSectionPts (local space, base at Y=0, top at Y=solidH)
+    // matches the frame the formula was designed for.
+    //
+    // The cutting plane's local frame:
+    //   u-axis: world X  (lies in the plane, perpendicular to tilt axis)
     //   v-axis: in-plane vertical component
     //           v = −z·cosθ + (y − cutPos)·sinθ
     //
-    // This matches the angular sort axes in cutSolid.js (FIX v4).
-    // The old projection used u=x, v = −z·cosθ + (y−cutPos)·sinθ which
-    // was already correct for the drawing but the sort used u=z — now
-    // both files agree so the polygon winds without self-intersection.
     const tR = (state.cutAngle * Math.PI) / 180;
     const cosT = Math.cos(tR), sinT = Math.sin(tR);
 
-    const proj2d = state.sectionPts.map(([x, y, z]) => [
+    const proj2d = localPts.map(([x, y, z]) => [
         x,                                          // u = X (unchanged)
         -z * cosT + (y - state.cutPos) * sinT,      // v = in-plane vertical
     ]);
@@ -236,11 +331,12 @@ export function drawTrueShape(state) {
     });
     const pw = mxx - mnx || 1, ph = mxy - mny || 1;
 
-    // Drawing area
-    const drawArea = { x: 38, y: 72, w: cw - 76, h: ch - 76 - tbH - 10 - 72 };
+    // Drawing area — leave extra margin on left for vertical dim arrow
+    const drawArea = { x: 48, y: 72, w: cw - 96, h: ch - 96 - tbH - 10 - 72 };
     const sc = Math.min((drawArea.w - 80) / pw, (drawArea.h - 80) / ph) * 0.82;
     const cx2 = (mnx + mxx) / 2, cy2 = (mny + mxy) / 2;
-    const originX = drawArea.x + drawArea.w / 2, originY = drawArea.y + drawArea.h / 2;
+    const originX = drawArea.x + drawArea.w / 2;
+    const originY = drawArea.y + drawArea.h / 2;
     const toSc = (u, v) => [originX + (u - cx2) * sc, originY - (v - cy2) * sc];
     const pts = proj2d.map(([u, v]) => toSc(u, v));
 
@@ -249,8 +345,8 @@ export function drawTrueShape(state) {
     ctx.strokeStyle = '#cc3333';
     ctx.lineWidth = 0.8;
     ctx.beginPath();
-    ctx.moveTo(originX - drawArea.w / 2 + 12, originY);
-    ctx.lineTo(originX + drawArea.w / 2 - 12, originY);
+    ctx.moveTo(drawArea.x + 12, originY);
+    ctx.lineTo(drawArea.x + drawArea.w - 12, originY);
     ctx.stroke();
     ctx.beginPath();
     ctx.moveTo(originX, drawArea.y + 12);
@@ -300,14 +396,20 @@ export function drawTrueShape(state) {
     ctx.setLineDash([]);
     ctx.stroke();
 
-    // ── Vertex dots + labels with leader lines ──
+    // ── Vertex dots + labels with leader lines from CENTROID (fixes bug 1.4) ──
+    // Use the polygon's own centroid so leaders point outward from the shape,
+    // not from the canvas center — prevents crossing/stacking on concave cuts.
+    const centX = pts.reduce((s, p) => s + p[0], 0) / pts.length;
+    const centY = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+
     pts.forEach(([sx, sy], i) => {
         ctx.beginPath();
         ctx.arc(sx, sy, 3, 0, Math.PI * 2);
         ctx.fillStyle = '#1a1a2e';
         ctx.fill();
 
-        const dx = sx - originX, dy = sy - originY;
+        // Direction from polygon centroid outward to this vertex
+        const dx = sx - centX, dy = sy - centY;
         const len = Math.sqrt(dx * dx + dy * dy) || 1;
         const nx = dx / len, ny = dy / len;
 
@@ -328,13 +430,17 @@ export function drawTrueShape(state) {
     });
     ctx.textBaseline = 'alphabetic';
 
-    // ── Dimension arrows ──
+    // ── Dimension arrows (clamped inside drawArea — fixes bug 1.3) ──
     const allX = pts.map(p => p[0]), allY = pts.map(p => p[1]);
     const bL = Math.min(...allX), bR = Math.max(...allX);
     const bT = Math.min(...allY), bBot = Math.max(...allY);
 
-    drawDimArrow(ctx, bL, bBot + 28, bR, bBot + 28,
-        `↔ ${((bR - bL) / sc).toFixed(1)}mm`, false);
-    drawDimArrow(ctx, bL, bT, bL - 28, bBot,
-        `↕ ${((bBot - bT) / sc).toFixed(1)}mm`, true);
+    drawDimArrow(
+        ctx, bL, bBot, bR, bBot,
+        `↔ ${((bR - bL) / sc).toFixed(1)}mm`, false, drawArea
+    );
+    drawDimArrow(
+        ctx, bL, bT, bL, bBot,
+        `↕ ${((bBot - bT) / sc).toFixed(1)}mm`, true, drawArea
+    );
 }

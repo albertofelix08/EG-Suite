@@ -6,6 +6,12 @@
  * Provides:
  *   - setIsometricView()  — standard isometric camera position
  *   - setView()           — snap to front/top/side orthographic views
+ *
+ * FIX v2:
+ *   BUG 5.4 — setView() was looking at target (0,0,0) — the floor of the HP
+ *             plane — so the named views cut the top of the solid off.
+ *             setIsometricView() already computed targetY = solidH/2 correctly.
+ *             setView() now accepts solidH and uses solidH/2 as the look-at Y.
  */
 
 import * as THREE from 'three';
@@ -46,23 +52,31 @@ export function setIsometricView(state) {
 // NAMED VIEWS (FRONT / TOP / SIDE)
 // ═══════════════════════════════════════════════════════════════════
 
-export function setView(view, camera, controls) {
+/**
+ * @param {string} view       - 'front' | 'top' | 'side'
+ * @param {THREE.Camera} camera
+ * @param {OrbitControls} controls
+ * @param {number} solidH     - current solid height so we can look at its centre
+ */
+export function setView(view, camera, controls, solidH) {
     if (!camera) return;
 
-    const target = new THREE.Vector3(0, 0, 0);
-    const d = 200; // distance from target
+    // FIX 5.4: Look at the vertical centre of the solid, not the floor
+    const targetY = solidH ? solidH / 2 : 30;
+    const target = new THREE.Vector3(0, targetY, 0);
+    const d = 220; // distance from target
 
     switch (view) {
         case 'front':
-            // Looking from +Z toward -Z (onto VP)
+            // Looking from +Z toward −Z (onto VP)
             camera.position.set(target.x, target.y, target.z + d);
             break;
         case 'top':
-            // Looking from +Y toward -Y (onto HP)
+            // Looking from +Y toward −Y (onto HP)
             camera.position.set(target.x, target.y + d, target.z + 0.001);
             break;
         case 'side':
-            // Looking from -X toward +X (onto SVP)
+            // Looking from −X toward +X (onto SVP)
             camera.position.set(target.x - d, target.y, target.z);
             break;
         default:
@@ -76,6 +90,10 @@ export function setView(view, camera, controls) {
 
     camera.lookAt(target);
 
-    const labels = { front: 'Front view (VP)', top: 'Plan view (HP)', side: 'Side view (SVP)' };
+    const labels = {
+        front: 'Front view (VP)',
+        top:   'Plan view (HP)',
+        side:  'Side view (SVP)',
+    };
     import('./scene.js').then(m => m.setStatus(labels[view] || ''));
 }

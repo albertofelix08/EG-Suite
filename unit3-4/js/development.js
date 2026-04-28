@@ -15,29 +15,99 @@
  *   Cylinder           → Single rectangle (2πr × h)
  *   Cone               → Circular sector
  *
- * FIX v2:
- *   BUG 1 — Cube and Cuboid were silently skipped by the dispatcher
- *            because their solidType strings don't include 'Prism'.
- *            They now route to drawPrismDev() which handles n=4 correctly
- *            (solids.js already tags them with solidType:'prism' internally).
+ * FIX v3:
+ *   BUG 1.2 — Paper noise texture regenerated with Math.random() on every
+ *             render (including every resize). Flicker is visible. Now pre-
+ *             generated once on an offscreen canvas and cached (same fix
+ *             as trueShape.js).
  *
- *   BUG 2 — drawDevelopment() in sectioned mode called computeSectionPoints()
- *            asynchronously (import().then()) and immediately used
- *            state.sectionPts before the promise resolved. On the very first
- *            render the cut line was missing. Fixed by awaiting the import
- *            and wrapping all drawing inside the resolved callback.
+ *   BUG 2.1 — Dispatcher used string.includes('Prism') / includes('Pyramid')
+ *             which is a case-sensitive partial match. New types triPrism,
+ *             triPyramid, squarePyramid all use camelCase and none of them
+ *             matched. All solids now dispatched with explicit type keys.
  *
- *   BUG 3 — drawConeDev() cut line used z = R·sin(bA) where bA was the
- *            unwrapped development angle. That is correct for the base-circle
- *            position, but the generator's ACTUAL Z depth in 3D is
- *            R·sin(generatorAngle) where generatorAngle sweeps the full 2π
- *            of the original base circle, not the compressed sector angle.
- *            The sector angle sA < 2π, so bA was under-sampling the depth
- *            oscillation, producing a flattened cut line for steep angles.
- *            Fixed by mapping development progress t → full 3D angle separately.
+ *   BUG 4.1 — drawPrismDev() only handled hexPrism/pentPrism explicitly;
+ *             triPrism (n=3) was not covered. Now n is derived for all
+ *             N-sided prism types from a shared lookup table.
  *
- *   BUG 4 — No "apply a cut first" fallback in sectioned mode — added.
+ *   BUG 4.2 — drawPyramidDev() hard-coded n=5 or n=6. squarePyramid (n=4)
+ *             and triPyramid (n=3) were silently unhandled. Same lookup
+ *             table approach used.
+ *
+ *   Previous fixes (v2, kept):
+ *   BUG 1 — Cube and Cuboid were silently skipped by the dispatcher.
+ *   BUG 2 — computeSectionPoints() called async before drawing.
+ *   BUG 3 — Cone cut line z-depth computed with wrong angle parameterisation.
+ *   BUG 4 — No "apply a cut first" fallback in sectioned mode.
  */
+
+import { solidName } from './solids.js';
+
+// ═══════════════════════════════════════════════════════════════════
+// NOISE TEXTURE CACHE  (same cache as trueShape.js — no flicker)
+// ═══════════════════════════════════════════════════════════════════
+
+let _noiseCanvas = null;
+
+function getNoiseCanvas(w, h) {
+    if (
+        _noiseCanvas &&
+        Math.abs(_noiseCanvas.width - w) <= 4 &&
+        Math.abs(_noiseCanvas.height - h) <= 4
+    ) {
+        return _noiseCanvas;
+    }
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = 'rgba(180,160,120,0.05)';
+    for (let i = 0; i < 1500; i++) {
+        ctx.fillRect(Math.random() * w, Math.random() * h, 1, 1);
+    }
+    _noiseCanvas = c;
+    return c;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// N-SIDED POLYGON HELPERS
+// ═══════════════════════════════════════════════════════════════════
+
+/** Number of lateral faces for each solid type */
+const FACE_COUNT = {
+    triPrism:     3,
+    triPyramid:   3,
+    cube:         4,
+    squarePyramid:4,
+    cuboid:       4,
+    pentPrism:    5,
+    pentPyramid:  5,
+    hexPrism:     6,
+    hexPyramid:   6,
+    cylinder:     null,  // handled separately
+    cone:         null,
+};
+
+function genPolygonBase(n, r) {
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+        const a = (2 * Math.PI * i) / n - Math.PI / 2;
+        pts.push([r * Math.cos(a), r * Math.sin(a)]);
+    }
+    return pts;
+}
+
+/** True if the solid type is a prism-family shape (flat-top with uniform height edges) */
+function isPrismType(t) {
+    return t === 'triPrism' || t === 'pentPrism' || t === 'hexPrism' ||
+           t === 'cube' || t === 'cuboid' || t === 'cylinder';
+}
+
+/** True if the solid type is a pyramid-family shape (apex-topped) */
+function isPyramidType(t) {
+    return t === 'triPyramid' || t === 'pentPyramid' || t === 'hexPyramid' ||
+           t === 'squarePyramid' || t === 'cone';
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // DRAWING HELPERS
@@ -46,10 +116,9 @@
 function drawPaperSheet(ctx, cw, ch, col1Frac, col2Frac, cols) {
     ctx.fillStyle = '#f5f0e8';
     ctx.fillRect(0, 0, cw, ch);
-    ctx.fillStyle = 'rgba(180,160,120,0.05)';
-    for (let i = 0; i < 1500; i++) {
-        ctx.fillRect(Math.random() * cw, Math.random() * ch, 1, 1);
-    }
+
+    // FIX 1.2: use cached noise instead of re-randomising on every render
+    ctx.drawImage(getNoiseCanvas(cw, ch), 0, 0);
 
     ctx.strokeStyle = '#1a1a2e';
     ctx.lineWidth = 3;
@@ -91,30 +160,11 @@ function drawPaperSheet(ctx, cw, ch, col1Frac, col2Frac, cols) {
     return { tbY, tbH };
 }
 
-function solidName(type) {
-    const map = {
-        hexPrism: 'Hexagonal Prism', pentPrism: 'Pentagonal Prism',
-        cylinder: 'Cylinder', cube: 'Cube', cuboid: 'Cuboid',
-        hexPyramid: 'Hexagonal Pyramid', pentPyramid: 'Pentagonal Pyramid',
-        cone: 'Cone',
-    };
-    return map[type] || type;
-}
-
-function genPolygonBase(n, r) {
-    const pts = [];
-    for (let i = 0; i < n; i++) {
-        const a = (2 * Math.PI * i) / n - Math.PI / 2;
-        pts.push([r * Math.cos(a), r * Math.sin(a)]);
-    }
-    return pts;
-}
-
 // ═══════════════════════════════════════════════════════════════════
 // DRAWING STYLE SHORTCUTS
 // ═══════════════════════════════════════════════════════════════════
 
-function devBlue(ctx) { ctx.fillStyle = 'rgba(200,220,255,0.18)'; }
+function devBlue(ctx)    { ctx.fillStyle = 'rgba(200,220,255,0.18)'; }
 function devOutline(ctx) { ctx.strokeStyle = '#1a1a2e'; ctx.lineWidth = 1.8; ctx.setLineDash([]); }
 function devCutLine(ctx) { ctx.strokeStyle = '#cc2222'; ctx.lineWidth = 2; ctx.setLineDash([]); }
 function devGenLine(ctx) { ctx.setLineDash([4, 4]); ctx.strokeStyle = '#aaa'; ctx.lineWidth = 0.7; }
@@ -133,7 +183,6 @@ function drawCylinderDev(ctx, dr, state, sect, tanT, animT) {
     devBlue(ctx);
     ctx.fillRect(ox, oy - H * sc, W * sc * animT, H * sc);
 
-    // Generator lines
     const lim = Math.floor(12 * animT);
     for (let i = 0; i <= lim; i++) {
         const x = ox + (i / 12) * W * sc;
@@ -150,7 +199,6 @@ function drawCylinderDev(ctx, dr, state, sect, tanT, animT) {
     devOutline(ctx);
     ctx.strokeRect(ox, oy - H * sc, W * sc * animT, H * sc);
 
-    // Cut line (sinusoidal)
     if (sect) {
         devCutLine(ctx);
         ctx.beginPath();
@@ -170,24 +218,9 @@ function drawCylinderDev(ctx, dr, state, sect, tanT, animT) {
 
 // ═══════════════════════════════════════════════════════════════════
 // CONE DEVELOPMENT
-// ═══════════════════════════════════════════════════════════════════
-//
-// FIX v2 (BUG 3): The cut line position for each generator is determined
-// by the generator's Z depth in 3D, which depends on its angle in the
-// ORIGINAL base circle (full 2π), not its angular position in the
-// development sector (which spans only sA = R/L · 2π < 2π radians).
-//
-// Old code mapped development progress t directly to bA = t·2π, so the
-// Z depth (R·sin(bA)) swept through one full oscillation — which is
-// correct in principle. However, the development angle aD = startA + t·sA
-// and bA were both parameterised by t, so they were proportional. This
-// is fine geometrically, EXCEPT that the sinusoidal depth oscillation
-// z = R·sin(t·2π) while the arc spans t·sA means the cut line undulates
-// at the wrong frequency relative to the sector arc for non-standard
-// proportions (R ≠ H). The fix maps each generator index to its actual
-// 3D base-circle angle (i/seg · 2π) and to its development angle
-// (startA + i/seg · sA) independently, making the relationship explicit
-// and numerically identical for all R:H ratios.
+// FIX v2 (BUG 3): 3D base-circle angle and development angle are now
+// parameterised independently so the cut line oscillation frequency
+// is correct for all R:H ratios.
 // ═══════════════════════════════════════════════════════════════════
 
 function drawConeDev(ctx, dr, state, sect, tR, tanT, animT) {
@@ -212,7 +245,6 @@ function drawConeDev(ctx, dr, state, sect, tR, tanT, animT) {
     ctx.closePath();
     ctx.stroke();
 
-    // Generator lines
     if (animT > 0.99) {
         const nG = 8;
         devGenLine(ctx);
@@ -226,22 +258,14 @@ function drawConeDev(ctx, dr, state, sect, tR, tanT, animT) {
         ctx.setLineDash([]);
     }
 
-    // Cut line
-    // Each sample i/seg represents:
-    //   - 3D base-circle angle: circleA = (i/seg) · 2π
-    //     → generator Z depth in 3D = R · sin(circleA)
-    //   - Development angle: devA = startA + (i/seg) · sA
-    //     → position on sector arc
-    //   - Height of intersection: hC = cutPos − z · tanθ (clamped to solid)
-    //   - Distance from apex in development: rD = (1 − hC/H) · L
     if (sect) {
         devCutLine(ctx);
         ctx.beginPath();
         const seg = 80, ls = Math.floor(seg * animT);
         for (let i = 0; i <= ls; i++) {
             const t       = i / seg;
-            const circleA = t * 2 * Math.PI;                          // FIX: explicit 3D angle
-            const devA    = startA + t * sA;                           // FIX: explicit dev angle
+            const circleA = t * 2 * Math.PI;           // actual 3D base angle
+            const devA    = startA + t * sA;            // angle in development sector
             const z    = state.solidR * Math.sin(circleA);
             const hC   = Math.max(0, Math.min(state.solidH, state.cutPos - z * tanT));
             const ratio = 1 - hC / state.solidH;
@@ -252,7 +276,6 @@ function drawConeDev(ctx, dr, state, sect, tR, tanT, animT) {
         ctx.stroke();
     }
 
-    // Labels
     if (animT > 0.99) {
         ctx.fillStyle = '#1a1a2e';
         ctx.font = '10px "Courier New",monospace';
@@ -271,36 +294,23 @@ function drawConeDev(ctx, dr, state, sect, tR, tanT, animT) {
 // ═══════════════════════════════════════════════════════════════════
 // PRISM / CUBE / CUBOID DEVELOPMENT
 //
-// FIX v2 (BUG 1): Cube and Cuboid are now routed here from the
-// dispatcher. Their solidType strings ('cube', 'cuboid') don't
-// contain 'Prism' so they were silently unhandled before. This
-// function derives n and sW from the actual geometry:
-//   - cube/cuboid: n=4 faces, each face width = side length
-//   - hexPrism:    n=6, face width = chord length at given R
-//   - pentPrism:   n=5, face width = chord length at given R
-// The cuboid case also uses state.solidD for depth faces.
+// FIX 4.1: triPrism (n=3) now handled via FACE_COUNT lookup table.
+// FIX v2 (BUG 1): cube and cuboid routed here from the dispatcher.
 // ═══════════════════════════════════════════════════════════════════
 
 function drawPrismDev(ctx, dr, state, sect, tanT, animT) {
     const type = state.solidType;
+    const n = FACE_COUNT[type];
+    let faceWidths;
 
-    // Determine face count and individual face widths
-    let n, faceWidths;
     if (type === 'cube') {
-        // 4 faces, all equal width = solidR (solids.js stores half-side as r)
-        n = 4;
-        const s = state.solidR; // cube: solidR = half-side → full side = 2r? 
-        // Actually solids.js sets bx = [-s/2, s/2, ...] where s=r, so side=r
         faceWidths = [state.solidR, state.solidR, state.solidR, state.solidR];
     } else if (type === 'cuboid') {
-        // 4 faces: two pairs (width × depth alternating)
-        n = 4;
         const w = state.solidR;
         const d = state.solidD || state.solidR;
         faceWidths = [w, d, w, d];
     } else {
-        // Hex/pent prism: all n faces equal width
-        n = type === 'pentPrism' ? 5 : 6;
+        // triPrism (n=3), pentPrism (n=5), hexPrism (n=6)
         const sW = 2 * state.solidR * Math.sin(Math.PI / n);
         faceWidths = Array(n).fill(sW);
     }
@@ -311,20 +321,15 @@ function drawPrismDev(ctx, dr, state, sect, tanT, animT) {
     const ox = dr.x + (dr.w - tW * sc) / 2;
     const oy = dr.y + dr.h - 20;
 
-    // For the cut line we need the base-polygon vertex Z depths.
-    // Cube/cuboid vertices follow the same genPolygonBase(4, r) pattern
-    // that solids.js uses, so we can use that helper for all cases.
     const base = genPolygonBase(n, state.solidR);
 
     const ff    = n * animT;
     const faces = Math.floor(ff);
     const frac  = ff - faces;
 
-    // Cumulative x positions for each face column
     const colX = [ox];
     for (let i = 0; i < n; i++) colX.push(colX[i] + faceWidths[i] * sc);
 
-    // Draw each rectangular face
     for (let i = 0; i < faces; i++) {
         const x = colX[i];
         const w = faceWidths[i] * sc;
@@ -340,7 +345,6 @@ function drawPrismDev(ctx, dr, state, sect, tanT, animT) {
         }
     }
 
-    // Partial last face during animation
     if (faces < n && frac > 0) {
         const x = colX[faces];
         const w = faceWidths[faces] * sc * frac;
@@ -350,7 +354,6 @@ function drawPrismDev(ctx, dr, state, sect, tanT, animT) {
         ctx.strokeRect(x, oy - H * sc, w, H * sc);
     }
 
-    // Cut line
     if (sect && animT > 0.01) {
         devCutLine(ctx);
         ctx.beginPath();
@@ -375,11 +378,15 @@ function drawPrismDev(ctx, dr, state, sect, tanT, animT) {
 
 // ═══════════════════════════════════════════════════════════════════
 // PYRAMID DEVELOPMENT
+//
+// FIX 4.2: n is now derived from FACE_COUNT, covering triPyramid (n=3)
+// and squarePyramid (n=4) in addition to pent (n=5) and hex (n=6).
 // ═══════════════════════════════════════════════════════════════════
 
 function drawPyramidDev(ctx, dr, state, sect, tR, tanT, animT) {
     const type = state.solidType;
-    const n  = type === 'pentPyramid' ? 5 : 6;
+    // FIX 4.2: use shared FACE_COUNT lookup, not hard-coded n=5/6
+    const n  = FACE_COUNT[type] || 4;
     const sW = 2 * state.solidR * Math.sin(Math.PI / n);
     const L  = Math.sqrt(state.solidR * state.solidR + state.solidH * state.solidH);
     const sA = sW / L;
@@ -393,7 +400,6 @@ function drawPyramidDev(ctx, dr, state, sect, tR, tanT, animT) {
     const faces = Math.floor(ff);
     const frac  = ff - faces;
 
-    // Draw each triangular face
     for (let i = 0; i < faces; i++) {
         const a1 = startA + i * sA;
         const a2 = a1 + sA;
@@ -414,7 +420,6 @@ function drawPyramidDev(ctx, dr, state, sect, tR, tanT, animT) {
         }
     }
 
-    // Partial last face
     if (faces < n && frac > 0) {
         const a1 = startA + faces * sA;
         const a2 = a1 + frac * sA;
@@ -428,7 +433,6 @@ function drawPyramidDev(ctx, dr, state, sect, tR, tanT, animT) {
         ctx.stroke();
     }
 
-    // Generator lines (radial)
     if (animT > 0.99) {
         devGenLine(ctx);
         for (let i = 0; i <= n; i++) {
@@ -441,7 +445,6 @@ function drawPyramidDev(ctx, dr, state, sect, tR, tanT, animT) {
         ctx.setLineDash([]);
     }
 
-    // Cut line
     if (sect && animT > 0.01) {
         devCutLine(ctx);
         ctx.beginPath();
@@ -468,7 +471,6 @@ function drawPyramidDev(ctx, dr, state, sect, tR, tanT, animT) {
         ctx.stroke();
     }
 
-    // Slant height label
     if (animT > 0.99) {
         const tipA = startA + tA;
         ctx.fillStyle = '#1a1a2e';
@@ -483,19 +485,15 @@ function drawPyramidDev(ctx, dr, state, sect, tR, tanT, animT) {
 // ═══════════════════════════════════════════════════════════════════
 // MAIN DISPATCHER
 //
-// FIX v2 (BUG 2): computeSectionPoints() is now called synchronously
-// before any drawing occurs. The old code fired it inside an async
-// import().then() and immediately continued drawing — on the very first
-// call the module hadn't resolved yet, so state.sectionPts was empty
-// and the cut line was invisible.
+// FIX 2.1: Dispatcher now uses isPrismType() and isPyramidType() helper
+// functions with explicit key lists instead of case-sensitive .includes()
+// string matching. Previously triPrism, triPyramid, squarePyramid all
+// failed silently because none of them matched 'Prism' or 'Pyramid'
+// (wrong case — the types are camelCase, not PascalCase).
 //
-// cutSolid.js is already imported by main.js so the dynamic import
-// resolves instantly from the module cache on subsequent calls. We wrap
-// the entire draw call inside the resolved callback to guarantee ordering
-// on the first render as well.
-//
-// FIX v2 (BUG 1): 'cube' and 'cuboid' are now explicitly dispatched
-// to drawPrismDev instead of falling through to nothing.
+// FIX v2 (BUG 2) kept: computeSectionPoints() called synchronously via
+// dynamic import (resolves from module cache after first call).
+// FIX v2 (BUG 4) kept: "apply a cut first" fallback in sectioned mode.
 // ═══════════════════════════════════════════════════════════════════
 
 export function drawDevelopment(state, animT = 1) {
@@ -512,22 +510,17 @@ export function drawDevelopment(state, animT = 1) {
 
     if (typeof animT !== 'number') animT = 1;
 
-    // Determine mode
     let devMode = 'full';
     const checkedRadio = document.querySelector('input[name="devMode"]:checked');
     if (checkedRadio) devMode = checkedRadio.value;
     const isSect = devMode === 'sectioned';
 
-    // FIX: ensure section points are computed BEFORE drawing begins.
-    // import() resolves from module cache on every call after the first,
-    // so the async overhead is negligible in practice.
     import('./cutSolid.js').then(m => {
         if (isSect) m.computeSectionPoints(state);
         _drawDevelopmentSync(canvas, state, isSect, animT);
     });
 }
 
-// Internal synchronous draw — called once cutSolid is guaranteed loaded.
 function _drawDevelopmentSync(canvas, state, isSect, animT) {
     const ctx = canvas.getContext('2d');
     const cw = canvas.width, ch = canvas.height;
@@ -535,7 +528,6 @@ function _drawDevelopmentSync(canvas, state, isSect, animT) {
     const tR   = (state.cutAngle * Math.PI) / 180;
     const tanT = Math.tan(tR);
 
-    // Paper sheet + title block
     const { tbY, tbH } = drawPaperSheet(ctx, cw, ch, 0.5, 0.75, [
         {
             title: 'DEVELOPMENT OF LATERAL SURFACE',
@@ -551,7 +543,6 @@ function _drawDevelopmentSync(canvas, state, isSect, animT) {
         }
     ]);
 
-    // Drawing title
     ctx.fillStyle = '#1a1a2e';
     ctx.textAlign = 'center';
     ctx.font = 'bold 13px "Courier New",monospace';
@@ -564,7 +555,7 @@ function _drawDevelopmentSync(canvas, state, isSect, animT) {
     );
 
     // FIX (BUG 4): No-cut fallback for sectioned mode
-    if (isSect && (!state.sectionPts || state.sectionPts.length < 3)) {
+    if (isSect && (!state._localSectionPts || state._localSectionPts.length < 3)) {
         ctx.fillStyle = '#888';
         ctx.font = 'italic 14px "Courier New",monospace';
         ctx.textAlign = 'center';
@@ -572,24 +563,20 @@ function _drawDevelopmentSync(canvas, state, isSect, animT) {
         return;
     }
 
-    // Drawing region
     const drawRegion = { x: 28, y: 72, w: cw - 56, h: tbY - 72 - 10 };
 
-    // Dispatch to shape-specific renderer
-    // FIX (BUG 1): cube and cuboid now explicitly route to drawPrismDev
     const type = state.solidType;
+
+    // FIX 2.1: explicit type dispatch instead of fragile .includes() string match
     if (type === 'cylinder') {
         drawCylinderDev(ctx, drawRegion, state, isSect, tanT, animT);
     } else if (type === 'cone') {
         drawConeDev(ctx, drawRegion, state, isSect, tR, tanT, animT);
-    } else if (type === 'cube' || type === 'cuboid') {
+    } else if (isPrismType(type)) {
         drawPrismDev(ctx, drawRegion, state, isSect, tanT, animT);
-    } else if (type.includes('Prism')) {
-        drawPrismDev(ctx, drawRegion, state, isSect, tanT, animT);
-    } else if (type.includes('Pyramid')) {
+    } else if (isPyramidType(type)) {
         drawPyramidDev(ctx, drawRegion, state, isSect, tR, tanT, animT);
     } else {
-        // Unknown solid type — show a helpful message instead of blank canvas
         ctx.fillStyle = '#888';
         ctx.font = 'italic 13px "Courier New",monospace';
         ctx.textAlign = 'center';

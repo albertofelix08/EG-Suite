@@ -23,6 +23,7 @@ import { drawDevelopment, animateUnroll } from './development.js';
 import { drawProjections } from './projection.js';
 import { setIsometricView } from './cameraControls.js';
 import { presets, applyPreset } from './presets.js';
+import { solidName as _solidName } from './solids.js';
 
 // ═══════════════════════════════════════════════════════════════════
 // GLOBAL STATE
@@ -160,6 +161,10 @@ function populatePresets() {
         btn.addEventListener('click', () => {
             applyPreset(preset, state);
             generateSolid();
+            // FIX 5.2: Unit IV presets include a cut — apply it automatically
+            if (preset.cutAngle != null && preset.cutPos != null) {
+                applyCut();
+            }
             setStatus(`Preset loaded: ${preset.label}`);
         });
         container.appendChild(btn);
@@ -263,14 +268,7 @@ function generateSolid() {
     // Redraw any active 2D tab
     redrawActiveTab();
 
-    // Update status
-    const nameMap = {
-        hexPrism: 'Hexagonal Prism', pentPrism: 'Pentagonal Prism',
-        cylinder: 'Cylinder', cube: 'Cube', cuboid: 'Cuboid',
-        hexPyramid: 'Hexagonal Pyramid', pentPyramid: 'Pentagonal Pyramid',
-        cone: 'Cone',
-    };
-    setStatus(`Generated: ${nameMap[state.solidType]} — H=${state.solidH}mm  R=${state.solidR}mm`);
+    setStatus(`Generated: ${_solidName(state.solidType)} — H=${state.solidH}mm  R=${state.solidR}mm`);
 }
 
 function updateBaseLabel() {
@@ -284,15 +282,9 @@ function updateBaseLabel() {
 }
 
 function updateInfoChips() {
-    const nameMap = {
-        hexPrism: 'Hexagonal Prism', pentPrism: 'Pentagonal Prism',
-        cylinder: 'Cylinder', cube: 'Cube', cuboid: 'Cuboid',
-        hexPyramid: 'Hexagonal Pyramid', pentPyramid: 'Pentagonal Pyramid',
-        cone: 'Cone',
-    };
     const chip1 = document.getElementById('infoSolidType');
     const chip2 = document.getElementById('infoDims');
-    if (chip1) chip1.textContent = nameMap[state.solidType] || state.solidType;
+    if (chip1) chip1.textContent = _solidName(state.solidType);
     if (chip2) {
         const isCuboid = state.solidType === 'cuboid';
         chip2.textContent = isCuboid
@@ -309,9 +301,27 @@ function applyCut() {
     state.cutAngle = parseFloat(document.getElementById('cutAngle').value) || 45;
     state.cutPos = parseFloat(document.getElementById('cutPos').value) || 40;
 
+    // FIX 3.3: Validate cutPos is within the solid's height before cutting
+    if (state.cutPos > state.solidH) {
+        setStatus(`⚠ Cut position (${state.cutPos}mm) is above the solid height (${state.solidH}mm) — adjust cutPos`);
+        const cutSlider = document.getElementById('cutPos');
+        if (cutSlider) { cutSlider.style.accentColor = '#ef4444'; }
+        setTimeout(() => {
+            const el = document.getElementById('cutPos');
+            if (el) el.style.accentColor = '';
+        }, 3000);
+        return;
+    }
 
     clearCutMeshes(state);
     computeSectionPoints(state);
+
+    // FIX 3.3: Check if cut produced any section geometry
+    if (!state._localSectionPts || state._localSectionPts.length < 3) {
+        setStatus('⚠ Cut produced no section — cutPos may be outside the solid. Try adjusting position or angle.');
+        return;
+    }
+
     applyCutVisual(state);
 
     // Hide preview plane
@@ -325,8 +335,8 @@ function applyCut() {
 
     state.isCutApplied = true;
     redrawActiveTab();
-    setStatus(`Cut applied — θ=${state.cutAngle}°, z₀=${state.cutPos} | ${state.sectionPts.length} section vertices`);
-    console.log('section points:', state.sectionPts.length);
+    setStatus(`Cut applied — θ=${state.cutAngle}°, z₀=${state.cutPos} | ${state._localSectionPts.length} section vertices`);
+    console.log('section points:', state._localSectionPts.length);
 }
 
 function restoreSolid() {
@@ -353,10 +363,12 @@ function populatePerpEdgeDropdown() {
     sel.innerHTML = '';
     let n = 0, label = 'Edge';
     const t = state.solidType;
-    if (t === 'pentPrism' || t === 'pentPyramid') { n = 5; label = 'Edge/Face'; }
-    else if (t === 'hexPrism' || t === 'hexPyramid') { n = 6; label = 'Edge/Face'; }
-    else if (t === 'cube' || t === 'cuboid') { n = 4; label = 'Face'; }
-    else if (t === 'cylinder' || t === 'cone') { n = 8; label = 'Generator'; }
+    if      (t === 'triPrism'  || t === 'triPyramid')  { n = 3; label = 'Edge/Face'; }
+    else if (t === 'squarePyramid')                     { n = 4; label = 'Edge/Face'; }
+    else if (t === 'pentPrism' || t === 'pentPyramid')  { n = 5; label = 'Edge/Face'; }
+    else if (t === 'hexPrism'  || t === 'hexPyramid')   { n = 6; label = 'Edge/Face'; }
+    else if (t === 'cube'      || t === 'cuboid')        { n = 4; label = 'Face'; }
+    else if (t === 'cylinder'  || t === 'cone')          { n = 8; label = 'Generator'; }
     for (let i = 0; i < n; i++) {
         const opt = document.createElement('option');
         opt.value = i;
@@ -387,7 +399,17 @@ function setupSidebarListeners() {
     syncSlider('solidR', 'solidRVal', (v) => { state.solidR = v; });
     syncSlider('solidH', 'solidHVal', (v) => {
         state.solidH = v;
-        document.getElementById('cutPos').max = v * 2;
+        // FIX 3.2: cutPos cap must match solidH so user can cut the full solid
+        const cutPosSlider = document.getElementById('cutPos');
+        const cutPosNum    = document.getElementById('cutPosVal');
+        if (cutPosSlider) cutPosSlider.max = v;
+        if (cutPosNum)    cutPosNum.max    = v;
+        // If current cutPos > new solidH, clamp it
+        if (state.cutPos > v) {
+            state.cutPos = v;
+            if (cutPosSlider) cutPosSlider.value = v;
+            if (cutPosNum)    cutPosNum.value    = v;
+        }
     });
     syncSlider('solidD', 'solidDVal', (v) => { state.solidD = v; });
 
@@ -440,17 +462,17 @@ function setupSidebarListeners() {
     document.getElementById('viewIsoBtn').addEventListener('click', () => setIsometricView(state));
     document.getElementById('viewFrontBtn').addEventListener('click', () => {
         import('./cameraControls.js').then(m =>
-            m.setView('front', state.camera, getControls())
+            m.setView('front', state.camera, getControls(), state.solidH)
         );
     });
     document.getElementById('viewTopBtn').addEventListener('click', () => {
         import('./cameraControls.js').then(m =>
-            m.setView('top', state.camera, getControls())
+            m.setView('top', state.camera, getControls(), state.solidH)
         );
     });
     document.getElementById('viewSideBtn').addEventListener('click', () => {
         import('./cameraControls.js').then(m =>
-            m.setView('side', state.camera, getControls())
+            m.setView('side', state.camera, getControls(), state.solidH)
         );
     });
     document.getElementById('resetViewBtn').addEventListener('click', () => setIsometricView(state));
@@ -550,15 +572,28 @@ function setupSidebarListeners() {
         radio.addEventListener('change', () => redrawActiveTab());
     });
 
-    // ── Export PNG ──
+    // ── Export PNG — captures active tab ──
     document.getElementById('exportBtn').addEventListener('click', () => {
+        const activeTab = document.querySelector('.tab-content.active');
+        const link = document.createElement('a');
+        link.download = `unit3-4-${Date.now()}.png`;
+
+        if (activeTab && activeTab.id !== 'tab3d') {
+            // 2D tab — grab the canvas inside it
+            const c2d = activeTab.querySelector('canvas');
+            if (c2d) {
+                link.href = c2d.toDataURL('image/png');
+                link.click();
+                setStatus('Screenshot saved (2D view)');
+                return;
+            }
+        }
+        // Default: 3D renderer
         if (state.renderer && state.scene && state.camera) {
             state.renderer.render(state.scene, state.camera);
-            const link = document.createElement('a');
-            link.download = `unit3-4-${Date.now()}.png`;
             link.href = state.renderer.domElement.toDataURL('image/png');
             link.click();
-            setStatus('Screenshot saved');
+            setStatus('Screenshot saved (3D view)');
         }
     });
 }

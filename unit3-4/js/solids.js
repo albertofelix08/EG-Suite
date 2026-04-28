@@ -3,9 +3,16 @@
  * Engineering Graphics Suite
  * Alberto Felix & Aaron Mcgeo | CSE-A(I)
  *
- * Generates BufferGeometry for all 8 solid types.
+ * Generates BufferGeometry for all solid types.
  * Every solid is built with base at Y=0 and top at Y=height in local space.
  * Boundary edges stored for clean wireframes (no diagonals).
+ *
+ * FIX v2:
+ *   - Added squarePyramid (n=4) — was referenced in presets but missing, caused blank 3D view
+ *   - Added triPrism (n=3) and triPyramid (n=3) — common syllabus shapes
+ *   - Exported solidName() so trueShape.js, projection.js and main.js share one source of truth
+ *   - Added null guard in buildEdgeVisibility for getIndex() to avoid crash on empty geo
+ *   - Added fallback for unknown solid types with a console.warn instead of silent crash
  */
 
 import * as THREE from 'three';
@@ -24,6 +31,27 @@ function genPolygonBase(n, r) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// SOLID NAME HELPER  (exported so all modules share one map)
+// ═══════════════════════════════════════════════════════════════════
+
+export function solidName(type) {
+    const map = {
+        hexPrism:     'Hexagonal Prism',
+        pentPrism:    'Pentagonal Prism',
+        triPrism:     'Triangular Prism',
+        cylinder:     'Cylinder',
+        cube:         'Cube',
+        cuboid:       'Cuboid',
+        hexPyramid:   'Hexagonal Pyramid',
+        pentPyramid:  'Pentagonal Pyramid',
+        triPyramid:   'Triangular Pyramid',
+        squarePyramid:'Square Pyramid',
+        cone:         'Cone',
+    };
+    return map[type] || type;
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // MAIN BUILDER
 // ═══════════════════════════════════════════════════════════════════
 
@@ -34,8 +62,9 @@ export function buildSolidMesh(state) {
     let data;
     let boundaryEdges = [];
 
-    if (type === 'hexPrism' || type === 'pentPrism') {
-        const n = type === 'hexPrism' ? 6 : 5;
+    // ── Generic N-sided Prism (hex, pent, tri) ──
+    if (type === 'hexPrism' || type === 'pentPrism' || type === 'triPrism') {
+        const n = type === 'hexPrism' ? 6 : type === 'pentPrism' ? 5 : 3;
         const base = genPolygonBase(n, r);
         const bot = base.map(([x, z]) => [x, 0, z]);
         const top = base.map(([x, z]) => [x, h, z]);
@@ -55,8 +84,15 @@ export function buildSolidMesh(state) {
         }
     }
 
-    else if (type === 'hexPyramid' || type === 'pentPyramid') {
-        const n = type === 'hexPyramid' ? 6 : 5;
+    // ── Generic N-sided Pyramid (hex, pent, tri, square) ──
+    else if (
+        type === 'hexPyramid' || type === 'pentPyramid' ||
+        type === 'triPyramid' || type === 'squarePyramid'
+    ) {
+        const n = type === 'hexPyramid'   ? 6
+                : type === 'pentPyramid'  ? 5
+                : type === 'triPyramid'   ? 3
+                : 4; // squarePyramid
         const base = genPolygonBase(n, r);
         const bot = base.map(([x, z]) => [x, 0, z]);
         const apexIdx = n;
@@ -160,6 +196,14 @@ export function buildSolidMesh(state) {
         }
     }
 
+    else {
+        // Unknown type — emit a warning instead of crashing silently
+        console.warn(`[solids] Unknown solid type: "${type}" — no geometry generated`);
+        data = { all: [], n: 0, solidType: 'prism', boundaryEdges: [] };
+        const geo = new THREE.BufferGeometry();
+        return { geo, data };
+    }
+
     // ── Deduplicate boundary edges ──
     const edgeSet = new Set();
     boundaryEdges = boundaryEdges.filter(([a, b]) => {
@@ -207,9 +251,12 @@ export function getWorldGeometry(state) {
 export function buildEdgeVisibility(state, viewDir) {
     if (!state.solidGeo || !state.solidData) return new Map();
 
+    // Guard: empty geometry (e.g. unknown solid type) has no index
+    const idxArr = state.solidGeo.getIndex()?.array;
+    if (!idxArr) return new Map();
+
     const mat = state.masterGroup.matrixWorld.clone();
     const posArr = state.solidGeo.getAttribute('position').array;
-    const idxArr = state.solidGeo.getIndex().array;
     const vd = viewDir.clone().normalize();
 
     function wp(i) {
