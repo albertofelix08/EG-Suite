@@ -22,6 +22,7 @@ import { drawTrueShape } from './trueShape.js';
 import { drawDevelopment, animateUnroll } from './development.js';
 import { drawProjections } from './projection.js';
 import { setIsometricView } from './cameraControls.js';
+import { presets, applyPreset } from './presets.js';
 
 // ═══════════════════════════════════════════════════════════════════
 // GLOBAL STATE
@@ -83,6 +84,7 @@ function init() {
     // Setup UI listeners
     setupTabSwitching();
     setupSidebarListeners();
+    populatePresets();
     setupModalListeners();
 
     // Generate initial solid
@@ -139,6 +141,29 @@ function redrawActiveTab() {
         case 'tabDev':       drawDevelopment(state, 1); break;
         case 'tabProj':      drawProjections(state); break;
     }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// PRESETS
+// ═══════════════════════════════════════════════════════════════════
+
+function populatePresets() {
+    const container = document.getElementById('presetsList');
+    if (!container) return;
+
+    presets.forEach(preset => {
+        const btn = document.createElement('button');
+        btn.className = 'quick-load-btn';
+        btn.style.cssText = 'text-align:left;font-size:9px;padding:6px 8px;';
+        btn.textContent = `[U${preset.unit}] ${preset.label}`;
+        btn.addEventListener('click', () => {
+            applyPreset(preset, state);
+            generateSolid();
+            setStatus(`Preset loaded: ${preset.label}`);
+        });
+        container.appendChild(btn);
+    });
 }
 
 // ═══════════════════════════════════════════════════════════════════
