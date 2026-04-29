@@ -549,10 +549,45 @@ function setupSidebarListeners() {
         });
     });
 
-    // ── Quick load buttons ──
-    document.querySelectorAll('.quick-load-btn').forEach(btn => {
+    // ── Axis condition / orientation preset buttons (⊥ HP, 30°, 45°, 60°, On HP, On VP) ──
+    // These buttons carry data-hp and data-vp attributes specifying the
+    // angle the axis makes with HP and VP respectively.
+    // Clicking one writes the values into the sliders/numbers AND into state,
+    // then triggers applyAxisOrientation so the 3D view updates immediately.
+    document.querySelectorAll('.orient-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const hp = parseFloat(btn.dataset.hp);  // angle with HP (°)
+            const vp = parseFloat(btn.dataset.vp);  // angle with VP (°)
+
+            // Update state
+            state.axisIncHP = hp;
+            state.axisIncVP = vp;
+
+            // Sync sliders + number inputs
+            const hpSlider = document.getElementById('incHP');
+            const hpVal    = document.getElementById('incHPVal');
+            const vpSlider = document.getElementById('incVP');
+            const vpVal    = document.getElementById('incVPVal');
+
+            if (hpSlider) hpSlider.value = hp;
+            if (hpVal)    hpVal.value    = hp;
+            if (vpSlider) vpSlider.value = vp;
+            if (vpVal)    vpVal.value    = vp;
+
+            // Apply to 3D scene and redraw 2D tabs
+            applyAxisOrientation(state);
+            if (state.cutPlaneVisible && !state.isCutApplied) updateCuttingPlane(state);
+            redrawActiveTab();
+
+            setStatus(`Orientation: axis at ${hp}° to HP, ${vp}° to VP`);
+        });
+    });
+
+    // ── Quick load buttons (solid-type shortcuts, not orient presets) ──
+    document.querySelectorAll('.quick-load-btn:not(.orient-btn)').forEach(btn => {
         btn.addEventListener('click', () => {
             const solidType = btn.dataset.solid;
+            if (!solidType) return;   // skip orient-btn or buttons without data-solid
             document.getElementById('solidType').value = solidType;
             state.solidType = solidType;
             updateBaseLabel();

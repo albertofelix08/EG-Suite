@@ -247,10 +247,21 @@ export function drawTrueShape(state) {
     const canvas = state.canvasTrueShape || document.getElementById('canvasTrueShape');
     if (!canvas) return;
 
-    const parent = canvas.parentElement;
-    const W = parent ? parent.clientWidth : 800;
-    const H = parent ? parent.clientHeight : 600;
-    if (!W || !H) return;
+    // Walk up the DOM to find real dimensions — the immediate parent may be
+    // a tab-content with display:none (0×0) if the tab hasn't been visited yet.
+    let W = 0, H = 0;
+    let el = canvas.parentElement;
+    while (el) {
+        W = el.clientWidth;
+        H = el.clientHeight;
+        if (W && H) break;
+        el = el.parentElement;
+    }
+    // Last-resort fallback so the drawing is never silently skipped
+    if (!W) W = canvas.offsetParent ? canvas.offsetParent.clientWidth : 800;
+    if (!H) H = canvas.offsetParent ? canvas.offsetParent.clientHeight : 600;
+    if (!W) W = 800;
+    if (!H) H = 600;
 
     canvas.width = W;
     canvas.height = H;
@@ -302,25 +313,31 @@ export function drawTrueShape(state) {
 
     // ── Rabatment: project LOCAL-SPACE section points onto cutting plane 2D ──
     //
-    // FIX 1.1: Previously used state.sectionPts (world space after masterGroup
-    // transform). That was wrong because drawTrueShape then re-applies the
-    // cut-angle formula on those already-rotated coordinates, double-rotating
-    // the shape for VP mode and any non-zero axisRot.
+    // The cutting plane in cutSolid.js is defined with:
+    //   tR = -(cutAngle * PI/180)   [negated]
+    //   tanT = tan(tR) = -tanθ
+    //   normal = normalize(tanT, 1, 0) = normalize(-tanθ, 1, 0) = (-sinθ, cosθ, 0)
+    //   passes through origin point (0, cutPos, 0)
     //
-    // Using _localSectionPts (local space, base at Y=0, top at Y=solidH)
-    // matches the frame the formula was designed for.
+    // Plane equation: -sinθ·x + cosθ·y = cosθ·cutPos → y = cutPos + x·tanθ
     //
-    // The cutting plane's local frame:
-    //   u-axis: world X  (lies in the plane, perpendicular to tilt axis)
-    //   v-axis: in-plane vertical component
-    //           v = −z·cosθ + (y − cutPos)·sinθ
+    // Orthonormal in-plane basis (derived via cross-product with normal):
+    //   u-hat = (0, 0, 1)                ← Z axis lies in the plane (N·Z = 0)
+    //   v-hat = N × u-hat = (cosθ, sinθ, 0)  ← in-plane "up" direction
     //
-    const tR = (state.cutAngle * Math.PI) / 180;
-    const cosT = Math.cos(tR), sinT = Math.sin(tR);
+    // 2D coords of point P=(x,y,z) relative to plane origin (0, cutPos, 0):
+    //   u = (P - P0) · u-hat = z
+    //   v = (P - P0) · v-hat = x·cosθ + (y - cutPos)·sinθ
+    //
+    // This is a true orthonormal rabatment — all pairwise distances on the
+    // cutting plane are exactly preserved in 2D (verified analytically).
+    //
+    const thetaRad = state.cutAngle * Math.PI / 180;
+    const cosT = Math.cos(thetaRad), sinT = Math.sin(thetaRad);
 
     const proj2d = localPts.map(([x, y, z]) => [
-        x,                                          // u = X (unchanged)
-        -z * cosT + (y - state.cutPos) * sinT,      // v = in-plane vertical
+        z,                                          // u = Z (in-plane horizontal axis)
+        x * cosT + (y - state.cutPos) * sinT,      // v = in-plane vertical axis
     ]);
 
     // Bounding box
@@ -331,9 +348,17 @@ export function drawTrueShape(state) {
     });
     const pw = mxx - mnx || 1, ph = mxy - mny || 1;
 
-    // Drawing area — leave extra margin on left for vertical dim arrow
-    const drawArea = { x: 48, y: 72, w: cw - 96, h: ch - 96 - tbH - 10 - 72 };
-    const sc = Math.min((drawArea.w - 80) / pw, (drawArea.h - 80) / ph) * 0.82;
+    // Drawing area — occupies the full paper space between header text and title block.
+    // tbY is the top of the title block; usable zone is from y=74 down to tbY-8.
+    const daTop    = 74;
+    const daBottom = tbY - 8;
+    const daLeft   = 44;
+    const daRight  = cw - 44;
+    const drawArea = { x: daLeft, y: daTop, w: daRight - daLeft, h: daBottom - daTop };
+
+    // Scale to fit with a comfortable margin, centred within drawing area
+    const margin = 60;
+    const sc = Math.min((drawArea.w - margin * 2) / pw, (drawArea.h - margin * 2) / ph);
     const cx2 = (mnx + mxx) / 2, cy2 = (mny + mxy) / 2;
     const originX = drawArea.x + drawArea.w / 2;
     const originY = drawArea.y + drawArea.h / 2;
