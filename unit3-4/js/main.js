@@ -192,6 +192,8 @@ function generateSolid() {
 
     // Clear previous cut state
     state.isCutApplied = false;
+    state._localSectionPts = [];
+    state.sectionPts = [];
     clearCutMeshes(state);
     removeCuttingPlane(state);
 

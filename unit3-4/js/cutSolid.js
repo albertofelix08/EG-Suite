@@ -319,7 +319,13 @@ export function clearCutMeshes(state) {
         });
         state._cutMeshes = [];
     }
-    state._localSectionPts = [];
+    // NOTE: _localSectionPts is intentionally NOT cleared here.
+    // It is owned by computeSectionPoints() and must survive the
+    // applyCutVisual() call that follows in applyCut(). Clearing
+    // it here was causing True Shape to see an empty section right
+    // after Apply Cut (because applyCutVisual calls clearCutMeshes
+    // internally, nuking the points that computeSectionPoints just set).
+    // _localSectionPts is now reset only at the top of computeSectionPoints().
 }
 
 // ═══════════════════════════════════════════════════════════════════
