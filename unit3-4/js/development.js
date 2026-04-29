@@ -42,6 +42,7 @@
  */
 
 import { solidName } from './solids.js';
+import { computeSectionPoints } from './cutSolid.js';
 
 // ═══════════════════════════════════════════════════════════════════
 // NOISE TEXTURE CACHE  (same cache as trueShape.js — no flicker)
@@ -500,10 +501,21 @@ export function drawDevelopment(state, animT = 1) {
     const canvas = state.canvasDev || document.getElementById('canvasDev');
     if (!canvas) return;
 
-    const parent = canvas.parentElement;
-    const W = parent ? parent.clientWidth : 800;
-    const H = parent ? parent.clientHeight : 600;
-    if (!W || !H) return;
+    // Walk up the DOM to find real dimensions — the immediate parent may be
+    // a tab-content with display:none (0x0) if the tab hasn't been visited yet.
+    // This mirrors the same fix already applied in trueShape.js.
+    let W = 0, H = 0;
+    let el = canvas.parentElement;
+    while (el) {
+        W = el.clientWidth;
+        H = el.clientHeight;
+        if (W && H) break;
+        el = el.parentElement;
+    }
+    if (!W) W = canvas.offsetParent ? canvas.offsetParent.clientWidth : 800;
+    if (!H) H = canvas.offsetParent ? canvas.offsetParent.clientHeight : 600;
+    if (!W) W = 800;
+    if (!H) H = 600;
 
     canvas.width = W;
     canvas.height = H;
@@ -515,10 +527,12 @@ export function drawDevelopment(state, animT = 1) {
     if (checkedRadio) devMode = checkedRadio.value;
     const isSect = devMode === 'sectioned';
 
-    import('./cutSolid.js').then(m => {
-        if (isSect) m.computeSectionPoints(state);
-        _drawDevelopmentSync(canvas, state, isSect, animT);
-    });
+    // Synchronous now that cutSolid.js is a static import.
+    // Previously used import().then() which broke the unroll animation: each
+    // rAF frame launched a new async promise, frames resolved out-of-order,
+    // and canvas dimensions were reset between frames — animation appeared frozen.
+    if (isSect) computeSectionPoints(state);
+    _drawDevelopmentSync(canvas, state, isSect, animT);
 }
 
 function _drawDevelopmentSync(canvas, state, isSect, animT) {
